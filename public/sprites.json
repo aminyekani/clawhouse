@@ -1,0 +1,27 @@
+{
+  "spriteWidth": 32,
+  "spriteHeight": 48,
+  "states": [
+    "active",
+    "idle",
+    "sip",
+    "away",
+    "walk"
+  ],
+  "framesPerState": 4,
+  "rows": [
+    "main",
+    "markethunting",
+    "sage",
+    "senku",
+    "shikamaru",
+    "tyrion",
+    "harvey",
+    "l",
+    "d",
+    "ephraim",
+    "house"
+  ],
+  "sheetWidth": 640,
+  "sheetHeight": 528
+}

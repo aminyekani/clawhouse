@@ -1,0 +1,3185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Pixel Office</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#212744" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Office" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <style>
+    :root {
+      --bg: #151525;
+      --panel2: #2e3560;
+      --line: #0d1020;
+      --text: #ecf2ff;
+      --muted: #a8b0cc;
+      --green: #42d392;
+      --amber: #ffcd57;
+      --red: #ff7b7b;
+      --shadow: rgba(0,0,0,.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      color: var(--text);
+      background: linear-gradient(180deg, #121220, #1a1d33 38%, #212744 38%, #212744 100%);
+      min-height: 100vh;
+    }
+    .topbar {
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:16px 20px; border-bottom:4px solid var(--line); background:rgba(17,19,34,.9);
+    }
+    .title { font-size:20px; font-weight:900; letter-spacing:1px; }
+    .subtitle { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    button, a.button {
+      appearance:none; border:0; cursor:pointer; text-decoration:none;
+      color:var(--text); background:var(--panel2); padding:10px 12px; border-radius:0;
+      box-shadow:4px 4px 0 var(--line); font:inherit; font-size:12px;
+    }
+    .button.secondary { background:#39416f; }
+    .wrap { display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:18px; padding:18px; }
+    .office {
+      /* Each room is locked to exactly the scene's width + room padding +
+         border (365 + 24 + 20 = 409px) so the brick frame hugs the scene
+         on every device — no shape-shifting, no extra wall on the sides
+         when the viewport is wide. justify-content:center keeps the grid
+         row centered in the page when there are fewer rooms per row. */
+      display:grid; grid-template-columns:repeat(auto-fit, 409px);
+      justify-content:center;
+      gap:0; align-content:start;
+      box-shadow: 8px 8px 0 var(--shadow);
+      position:relative; /* anchor for the roaming office dog */
+    }
+    .room {
+      --wall1:#313b66; --wall2:#252d50; --floor1:#8d6949; --floor2:#6d4f36; --accent:#67c6ff; --accent2:#d6f6ff; --shirt:#62d0ff; --hair:#11172f; --skin:#ffd79a; --prop:#53bf7d; --metal:#4d588d; --glow:#59f7c7;
+      min-height: 312px;
+      /* Shared brick walls between rooms — identical pattern across every
+         room so adjacent borders meet seamlessly, reading as one continuous
+         brick wall. Two layered backgrounds: the brick tile fills the
+         border-box (visible in the border area), and the themed interior
+         gradient covers padding-box (room interior). */
+      border: 10px solid transparent;
+      background:
+        linear-gradient(180deg, var(--wall1) 0%, var(--wall2) 100%),
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 16' preserveAspectRatio='none' shape-rendering='crispEdges'><rect width='24' height='16' fill='%232a1810'/><rect x='0' y='0' width='11' height='7' fill='%238a4830'/><rect x='12' y='0' width='11' height='7' fill='%237a3a24'/><rect x='0' y='8' width='5' height='7' fill='%239a5840'/><rect x='6' y='8' width='11' height='7' fill='%238a4830'/><rect x='18' y='8' width='5' height='7' fill='%237a3a24'/></svg>") 0 0 / 24px 16px;
+      background-clip: padding-box, border-box;
+      background-origin: padding-box, border-box;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.4);
+      position:relative; overflow:hidden; padding:12px; text-align:left;
+      /* Flex column with space-between pins the header to the top and the
+         footer to the bottom, leaving the scene centered in the remaining
+         space — prevents the middle from feeling squeezed when the room is
+         taller than its content (after the aspect-ratio change). */
+      display:flex; flex-direction:column; justify-content:space-between;
+    }
+    .room::before {
+      content:""; position:absolute; inset:0; background-image:linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-size:16px 16px; pointer-events:none;
+    }
+    .room-header,.room-footer,.scene { position:relative; z-index:1; }
+    .room-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .agent-name { font-size:15px; font-weight:900; }
+    .agent-role { color:var(--muted); font-size:11px; }
+    .badge { font-size:10px; padding:6px 8px; background:rgba(0,0,0,.25); border:2px solid var(--line); }
+    /* Claude-Code-style context bar in the header — sits between the agent
+       name (left) and the status badge (right). Color shifts with usage:
+       <50% green, 50-80% amber, ≥80% red. Larger and bolder than the
+       surrounding header text so it reads as the room's headline metric. */
+    .ctxbar {
+      font-size:11px; font-weight:700; white-space:nowrap;
+      font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+      letter-spacing:.2px; text-align:center; flex:1;
+      text-shadow:0 1px 0 rgba(0,0,0,.45);
+      display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    }
+    .ctxbar.ok   { color:#59f7c7; }
+    .ctxbar.warn { color:#ffd070; }
+    .ctxbar.hot  { color:#ff7878; }
+    /* Cron-jobs chip — shows N scheduled jobs in OpenClaw cron for this
+       agent. Sits to the LEFT of the ctxbar value. Hidden when 0 jobs. */
+    .cron-chip {
+      display:inline-flex; align-items:center; gap:2px;
+      padding:1px 5px;
+      font-size:9px; font-weight:700;
+      background:rgba(255,208,112,.15); color:#ffd070;
+      border:1px solid rgba(255,208,112,.45);
+      border-radius:3px;
+    }
+    /* Products chip — N apps shipped/in-flight by this agent. Same shape as
+       cron chip; uses a green tint so it reads as "shipped" not "scheduled". */
+    .product-chip {
+      display:inline-flex; align-items:center; gap:2px;
+      padding:1px 5px;
+      font-size:9px; font-weight:700;
+      background:rgba(89,247,199,.12); color:#59f7c7;
+      border:1px solid rgba(89,247,199,.45);
+      border-radius:3px;
+    }
+    /* Side-panel product cards — link buttons for Local + LAN launch URLs. */
+    .product-list { display:grid; gap:8px; margin-top:4px; }
+    .product-card {
+      border:2px solid var(--line); background:#2b3156; padding:8px 10px;
+      display:grid; gap:4px;
+    }
+    .product-card-head {
+      display:flex; align-items:center; justify-content:space-between; gap:6px;
+      font-size:12px; font-weight:800; color:var(--text);
+    }
+    .product-status {
+      font-size:9px; padding:1px 5px; border:1px solid currentColor;
+      text-transform:uppercase; letter-spacing:.5px;
+    }
+    .product-status.live     { color:#59f7c7; }
+    .product-status.offline  { color:#ff7a7a; }
+    .product-status.checking { color:#9aa0c2; }
+    .product-status.wip      { color:#ffd070; }
+    .product-status.planning { color:#79b4ff; }
+    .product-status.paused   { color:#9aa0c2; }
+    .product-desc { font-size:11px; color:var(--muted); line-height:1.35; }
+    .product-links { display:flex; flex-wrap:wrap; gap:4px; }
+    .product-link {
+      display:inline-flex; flex-direction:column; gap:1px;
+      padding:4px 8px;
+      background:#1a1f38; color:#cfe0ff;
+      border:1px solid var(--line); text-decoration:none;
+      line-height:1.2;
+    }
+    .product-link:hover { background:#222850; }
+    .product-link .lbl {
+      font-size:11px; font-weight:700; letter-spacing:.3px;
+    }
+    .product-link .sub {
+      font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+      font-size:9px; color:var(--muted);
+    }
+    .product-link.start-btn {
+      background:#1f4a3a; color:#d6ffe9; cursor:pointer;
+      font-family:inherit;
+    }
+    .product-link.start-btn:hover { background:#286b53; }
+    .product-link.start-btn:disabled { opacity:.6; cursor:wait; }
+    .product-link.unavailable {
+      color:var(--muted); font-style:italic; cursor:default;
+      border-style:dashed;
+    }
+    .product-link.docs-only {
+      color:#cdb7ff; cursor:default; border-style:dashed;
+    }
+    .product-link.docs-only .sub { color:#9d8fc8; }
+    /* Scene is locked to a fixed 320x240 box (4:3) on every device. All
+       furniture/sprite/window/lamp positions inside the scene are absolute
+       pixel offsets, so freezing the scene size guarantees the same layout
+       on phone, tablet, and desktop — nothing reflows or shifts. The room
+       around it can still flex; the scene just sits centered inside it. */
+    .scene { width:365px; height:274px; max-width:100%; margin:0 auto; }
+    .decor {
+      position:absolute;
+      background-image: url('furniture.png');
+      background-repeat: no-repeat;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,.35));
+    }
+    /* Windows — upper-right of wall, 3× scale (32x32 src → 96x96 display) */
+    /* All agent windows — CSS-painted, no sprite. Same wood frame + cross
+       mullions on every room; unique scene per agent matching their job. */
+    .decor.window-eagle,
+    .decor.window-market,
+    .decor.window-sage,
+    .decor.window-senku,
+    .decor.window-shikamaru,
+    .decor.window-tyrion,
+    .decor.window-harvey,
+    .decor.window-l,
+    .decor.window-d,
+    .decor.window-ephraim,
+    .decor.window-house {
+      top: 28px; right: 72px;
+      width: 96px; height: 96px;
+      background-image: none;
+      border: 4px solid #2a1810;
+      box-shadow: inset 0 0 0 2px #4a3018;
+    }
+    /* horizontal mullion */
+    .decor.window-eagle::before,
+    .decor.window-market::before,
+    .decor.window-sage::before,
+    .decor.window-senku::before,
+    .decor.window-shikamaru::before,
+    .decor.window-tyrion::before,
+    .decor.window-harvey::before,
+    .decor.window-l::before,
+    .decor.window-d::before,
+    .decor.window-ephraim::before,
+    .decor.window-house::before {
+      content:""; position:absolute; left:4px; right:4px;
+      top: calc(50% - 1px); height: 2px;
+      background: #2a1810; z-index: 2;
+    }
+    /* vertical mullion */
+    .decor.window-eagle::after,
+    .decor.window-market::after,
+    .decor.window-sage::after,
+    .decor.window-senku::after,
+    .decor.window-shikamaru::after,
+    .decor.window-tyrion::after,
+    .decor.window-harvey::after,
+    .decor.window-l::after,
+    .decor.window-d::after,
+    .decor.window-ephraim::after,
+    .decor.window-house::after {
+      content:""; position:absolute; top:4px; bottom:4px;
+      left: calc(50% - 1px); width: 2px;
+      background: #2a1810; z-index: 2;
+    }
+
+    /* Commander — relaxing vista: pastel sky, soft clouds, misty mountains,
+       mossy grass with wildflowers. Atmospheric perspective fades distant
+       mountains toward sky color for a calm, restful feel. */
+    .decor.window-eagle {
+      background:
+        /* wildflowers scattered in the grass */
+        linear-gradient(#fff8d8, #fff8d8) no-repeat 14px 90% / 1px 1px,
+        linear-gradient(#ffe080, #ffe080) no-repeat 28px 93% / 1px 1px,
+        linear-gradient(#fff8d8, #fff8d8) no-repeat 42px 88% / 1px 1px,
+        linear-gradient(#f8b0c8, #f8b0c8) no-repeat 56px 92% / 1px 1px,
+        linear-gradient(#fff8d8, #fff8d8) no-repeat 70px 90% / 1px 1px,
+        linear-gradient(#ffe080, #ffe080) no-repeat 82px 94% / 1px 1px,
+        /* grass — soft mossy meadow with depth */
+        linear-gradient(180deg, #88b868 0%, #6a9a48 50%, #5a8a3a 100%) no-repeat 0 100% / 100% 20%,
+        /* foreground mountain ridge — soft muted green-blue */
+        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" preserveAspectRatio="none"><polygon points="0,76 16,60 28,70 42,55 56,64 72,58 86,66 96,62 96,96 0,96" fill="%23708898"/></svg>') no-repeat 0 0 / 100% 100%,
+        /* soft clouds drifting above the distant range */
+        radial-gradient(ellipse 18px 5px at 50% 22%, rgba(255,255,255,.82) 0%, rgba(255,255,255,.5) 55%, transparent 100%),
+        radial-gradient(ellipse 14px 4px at 22% 32%, rgba(255,255,255,.78) 0%, rgba(255,255,255,.45) 60%, transparent 100%),
+        radial-gradient(ellipse 10px 3px at 30% 16%, rgba(255,255,255,.85) 0%, transparent 100%),
+        /* background mountain range — distant misty blue-purple */
+        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" preserveAspectRatio="none"><polygon points="0,62 12,46 24,55 38,32 52,50 64,40 78,52 96,44 96,96 0,96" fill="%239aacc4"/></svg>') no-repeat 0 0 / 100% 100%,
+        /* sun disc — soft pale yellow */
+        radial-gradient(circle at 72% 28%, #fff8d8 0%, #ffe098 8%, transparent 9%),
+        /* gentle sun halo */
+        radial-gradient(circle at 72% 28%, rgba(255,240,180,.42) 0%, rgba(255,240,180,.16) 18%, transparent 32%),
+        /* gentle pastel sky */
+        linear-gradient(180deg, #a8d0ea 0%, #c0dcee 35%, #d8eaee 65%, #e8f0e6 90%, #dde8d2 100%);
+    }
+    /* MarketHunting — financial district by day: glass towers, bright sky. */
+    .decor.window-market {
+      background:
+        linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,.35)) no-repeat 10px 22% / 2px 12%,
+        linear-gradient(rgba(255,255,255,.25), rgba(255,255,255,.25)) no-repeat 28px 30% / 2px 8%,
+        linear-gradient(rgba(255,255,255,.3), rgba(255,255,255,.3)) no-repeat 42px 18% / 3px 18%,
+        linear-gradient(rgba(255,255,255,.2), rgba(255,255,255,.2)) no-repeat 60px 26% / 2px 14%,
+        linear-gradient(#3a5070, #3a5070) no-repeat 6px 100% / 14px 65%,
+        linear-gradient(#4a6080, #4a6080) no-repeat 24px 100% / 12px 52%,
+        linear-gradient(#3a5070, #3a5070) no-repeat 38px 100% / 18px 74%,
+        linear-gradient(#4a6080, #4a6080) no-repeat 58px 100% / 12px 58%,
+        linear-gradient(#3a5070, #3a5070) no-repeat 72px 100% / 16px 46%,
+        linear-gradient(#181820, #181820) no-repeat 0 100% / 100% 10%,
+        linear-gradient(180deg, #4a80c8 0%, #6898d8 35%, #8ab0e0 65%, #c8d8ee 90%, #e0ecf8 100%);
+    }
+    /* Sage — quiet neighborhood: 3 houses, tree, hedges, two kids playing
+       with a ball on the front lawn. Built as one inline SVG so we can use
+       triangular roofs, circles for kid heads, and an oval ball. */
+    .decor.window-sage {
+      background:
+        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" preserveAspectRatio="none"><ellipse cx="20" cy="14" rx="8" ry="2.5" fill="white" opacity="0.85"/><ellipse cx="62" cy="22" rx="10" ry="3" fill="white" opacity="0.8"/><rect x="0" y="72" width="96" height="14" fill="%237aac58"/><rect x="0" y="86" width="96" height="10" fill="%23a8a8a0"/><rect x="3" y="64" width="2" height="10" fill="%235a3a20"/><ellipse cx="4" cy="56" rx="6" ry="10" fill="%233a8038"/><rect x="14" y="58" width="18" height="14" fill="%23f0e0c0"/><polygon points="12,58 23,46 34,58" fill="%23a04030"/><rect x="20" y="64" width="5" height="8" fill="%235a3a20"/><rect x="16" y="62" width="3" height="3" fill="%23fff8c0"/><rect x="28" y="62" width="3" height="3" fill="%23fff8c0"/><rect x="40" y="52" width="22" height="20" fill="%23cad8e8"/><polygon points="38,52 51,38 64,52" fill="%235070a0"/><rect x="48" y="62" width="6" height="10" fill="%23704028"/><rect x="42" y="56" width="4" height="3" fill="%23fff8c0"/><rect x="56" y="56" width="4" height="3" fill="%23fff8c0"/><rect x="68" y="60" width="20" height="12" fill="%23f8d8c0"/><polygon points="66,60 78,50 90,60" fill="%23a06040"/><rect x="76" y="64" width="5" height="8" fill="%235a3a20"/><rect x="70" y="62" width="3" height="3" fill="%23fff8c0"/><ellipse cx="36" cy="74" rx="4" ry="2" fill="%233a8038"/><ellipse cx="65" cy="74" rx="3" ry="2" fill="%233a8038"/><circle cx="24" cy="78" r="1.5" fill="%23f0d0a0"/><rect x="22.5" y="79.5" width="3" height="4" fill="%23d04848"/><circle cx="58" cy="80" r="1.5" fill="%23f0d0a0"/><rect x="56.5" y="81.5" width="3" height="3" fill="%234878c8"/><circle cx="42" cy="84" r="1.5" fill="%23ffd070"/></svg>') no-repeat 0 0 / 100% 100%,
+        /* gentle daytime sky */
+        linear-gradient(180deg, #a8d0e8 0%, #c0dff0 45%, #dceef8 75%, #eef8e0 100%);
+    }
+    /* Senku — aurora night over science facility: green glow, lab tower. */
+    .decor.window-senku {
+      background:
+        linear-gradient(180deg, transparent 28%, rgba(60,255,180,.22) 28% 52%, rgba(60,200,255,.14) 52% 66%, transparent 66%) no-repeat 0 0 / 100% 72%,
+        linear-gradient(#78dbff, #78dbff) no-repeat 40px 64% / 2px 1px,
+        linear-gradient(#78dbff, #78dbff) no-repeat 44px 70% / 2px 1px,
+        linear-gradient(#78dbff, #78dbff) no-repeat 48px 64% / 2px 1px,
+        linear-gradient(#050c0a, #050c0a) no-repeat 0 100% / 24px 26%,
+        linear-gradient(#050c0a, #050c0a) no-repeat 20px 100% / 18px 20%,
+        linear-gradient(#050c0a, #050c0a) no-repeat 36px 100% / 28px 38%,
+        linear-gradient(#050c0a, #050c0a) no-repeat 62px 100% / 16px 24%,
+        linear-gradient(#050c0a, #050c0a) no-repeat 76px 100% / 20px 18%,
+        linear-gradient(#050c0a, #050c0a) no-repeat 0 100% / 100% 14%,
+        linear-gradient(180deg, #020a0c 0%, #041418 35%, #083828 65%, #041820 100%);
+    }
+    /* Shikamaru — Capitol building under blue sky: domed rotunda with spire,
+       columned wings, marble steps, front lawn. Drawn as one SVG so the dome
+       (ellipse) and pediment shapes render cleanly. */
+    .decor.window-shikamaru {
+      background:
+        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" preserveAspectRatio="none"><ellipse cx="14" cy="14" rx="6" ry="2" fill="white" opacity="0.8"/><ellipse cx="80" cy="22" rx="8" ry="2.5" fill="white" opacity="0.75"/><rect x="6" y="64" width="84" height="18" fill="%23eae4d2"/><rect x="36" y="52" width="24" height="14" fill="%23eae4d2"/><ellipse cx="48" cy="52" rx="12" ry="10" fill="%23dcd4be"/><ellipse cx="44" cy="49" rx="4" ry="5" fill="%23f0e8d4" opacity="0.6"/><rect x="47" y="34" width="2" height="8" fill="%23b8b09a"/><circle cx="48" cy="34" r="1.5" fill="%23d4a04a"/><rect x="14" y="68" width="2" height="12" fill="%23d4ccb6"/><rect x="20" y="68" width="2" height="12" fill="%23d4ccb6"/><rect x="26" y="68" width="2" height="12" fill="%23d4ccb6"/><rect x="40" y="56" width="2" height="10" fill="%23d4ccb6"/><rect x="46" y="56" width="2" height="10" fill="%23d4ccb6"/><rect x="50" y="56" width="2" height="10" fill="%23d4ccb6"/><rect x="56" y="56" width="2" height="10" fill="%23d4ccb6"/><rect x="68" y="68" width="2" height="12" fill="%23d4ccb6"/><rect x="74" y="68" width="2" height="12" fill="%23d4ccb6"/><rect x="80" y="68" width="2" height="12" fill="%23d4ccb6"/><polygon points="30,82 66,82 72,86 24,86" fill="%23d8d2c4"/><rect x="0" y="86" width="96" height="10" fill="%23789868"/></svg>') no-repeat 0 0 / 100% 100%,
+        /* clear blue daytime sky */
+        linear-gradient(180deg, #3858a0 0%, #5070b8 25%, #8098cc 55%, #b0c0dc 80%, #d8e4f0 100%);
+    }
+    /* Tyrion — Westeros sunset: castle wall + towers + spires. */
+    .decor.window-tyrion {
+      background:
+        linear-gradient(#1a0810, #1a0810) no-repeat 10px 100% / 8px 30%,
+        linear-gradient(#1a0810, #1a0810) no-repeat 24px 100% / 6px 24%,
+        linear-gradient(#1a0810, #1a0810) no-repeat 38px 100% / 12px 48%,
+        linear-gradient(#1a0810, #1a0810) no-repeat 58px 100% / 8px 34%,
+        linear-gradient(#1a0810, #1a0810) no-repeat 72px 100% / 10px 26%,
+        linear-gradient(#1a0810, #1a0810) no-repeat 0 100% / 100% 16%,
+        linear-gradient(180deg, #ffd07a 0%, #ff8a48 32%, #d04a3a 60%, #6a2848 84%, #2a1428 100%);
+    }
+    /* Harvey — Manhattan dusk: skyscrapers + scattered lit office windows. */
+    .decor.window-harvey {
+      background:
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 11px 70% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 14px 78% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 25px 55% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 28px 65% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 41px 45% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 44px 55% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 47px 65% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 59px 60% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 62px 70% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 73px 75% / 1px 1px,
+        linear-gradient(#ffd07a, #ffd07a) no-repeat 78px 82% / 1px 1px,
+        linear-gradient(#0a0a18, #0a0a18) no-repeat 8px 100% / 10px 42%,
+        linear-gradient(#0a0a18, #0a0a18) no-repeat 22px 100% / 12px 58%,
+        linear-gradient(#0a0a18, #0a0a18) no-repeat 38px 100% / 14px 70%,
+        linear-gradient(#0a0a18, #0a0a18) no-repeat 56px 100% / 10px 50%,
+        linear-gradient(#0a0a18, #0a0a18) no-repeat 70px 100% / 14px 36%,
+        linear-gradient(#0a0a18, #0a0a18) no-repeat 0 100% / 100% 12%,
+        linear-gradient(180deg, #2a3868 0%, #4858a0 25%, #ad6260 55%, #6a3848 82%, #1a1428 100%);
+    }
+    /* L — rainy surveillance night: wet city, cold blue lit windows, rain streaks. */
+    .decor.window-l {
+      background:
+        linear-gradient(rgba(150,180,220,.4), rgba(150,180,220,.4)) no-repeat 18px 10% / 1px 18%,
+        linear-gradient(rgba(150,180,220,.3), rgba(150,180,220,.3)) no-repeat 34px 5% / 1px 22%,
+        linear-gradient(rgba(150,180,220,.4), rgba(150,180,220,.4)) no-repeat 52px 12% / 1px 15%,
+        linear-gradient(rgba(150,180,220,.3), rgba(150,180,220,.3)) no-repeat 70px 7% / 1px 20%,
+        linear-gradient(rgba(150,180,220,.35), rgba(150,180,220,.35)) no-repeat 82px 5% / 1px 24%,
+        linear-gradient(#c8d8f0, #c8d8f0) no-repeat 10px 64% / 2px 1px,
+        linear-gradient(#c8d8f0, #c8d8f0) no-repeat 16px 72% / 1px 2px,
+        linear-gradient(#c8d8f0, #c8d8f0) no-repeat 36px 60% / 2px 1px,
+        linear-gradient(#c8d8f0, #c8d8f0) no-repeat 54px 68% / 1px 2px,
+        linear-gradient(#c8d8f0, #c8d8f0) no-repeat 66px 76% / 2px 1px,
+        linear-gradient(#c8d8f0, #c8d8f0) no-repeat 78px 65% / 1px 1px,
+        linear-gradient(#0a0c12, #0a0c12) no-repeat 6px 100% / 12px 38%,
+        linear-gradient(#0a0c12, #0a0c12) no-repeat 22px 100% / 10px 28%,
+        linear-gradient(#0a0c12, #0a0c12) no-repeat 34px 100% / 14px 44%,
+        linear-gradient(#0a0c12, #0a0c12) no-repeat 52px 100% / 12px 32%,
+        linear-gradient(#0a0c12, #0a0c12) no-repeat 66px 100% / 16px 36%,
+        linear-gradient(#0a0c12, #0a0c12) no-repeat 0 100% / 100% 16%,
+        linear-gradient(180deg, #0a0c12 0%, #141820 40%, #1e2430 70%, #283040 100%);
+    }
+    /* D — neon night city / concert district: purple sky, pink+violet lit windows. */
+    .decor.window-d {
+      background:
+        radial-gradient(circle at 25% 78%, rgba(255,80,180,.32) 0%, transparent 30%),
+        radial-gradient(circle at 74% 68%, rgba(160,80,255,.28) 0%, transparent 26%),
+        linear-gradient(#ff80c8, #ff80c8) no-repeat 10px 60% / 2px 2px,
+        linear-gradient(#c080ff, #c080ff) no-repeat 16px 70% / 1px 1px,
+        linear-gradient(#ff80c8, #ff80c8) no-repeat 28px 54% / 2px 1px,
+        linear-gradient(#c080ff, #c080ff) no-repeat 42px 64% / 1px 2px,
+        linear-gradient(#ff80c8, #ff80c8) no-repeat 56px 72% / 2px 1px,
+        linear-gradient(#c080ff, #c080ff) no-repeat 68px 62% / 1px 2px,
+        linear-gradient(#ff80c8, #ff80c8) no-repeat 78px 68% / 2px 1px,
+        linear-gradient(#0a0410, #0a0410) no-repeat 4px 100% / 10px 38%,
+        linear-gradient(#0a0410, #0a0410) no-repeat 18px 100% / 14px 52%,
+        linear-gradient(#0a0410, #0a0410) no-repeat 34px 100% / 10px 44%,
+        linear-gradient(#0a0410, #0a0410) no-repeat 48px 100% / 16px 58%,
+        linear-gradient(#0a0410, #0a0410) no-repeat 66px 100% / 12px 42%,
+        linear-gradient(#0a0410, #0a0410) no-repeat 80px 100% / 16px 36%,
+        linear-gradient(#0a0410, #0a0410) no-repeat 0 100% / 100% 12%,
+        linear-gradient(180deg, #0a0418 0%, #180830 40%, #2a1050 70%, #3a1860 100%);
+    }
+    /* Ephraim — Rocky-dawn ridgeline run: lone runner silhouette cresting a
+       foreground ridge against layered mountain silhouettes and a fiery
+       sunrise. Three depth layers (distant haze ridge, mid-range, foreground
+       hill) plus a glowing sun, a few drifting cloud streaks, and two birds.
+       Pulls from his red accent so the room reads as one piece. */
+    .decor.window-ephraim {
+      background:
+        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" preserveAspectRatio="none"><path d="M 14 18 L 22 18" stroke="%23fff4d8" stroke-width="0.5" stroke-linecap="round" opacity="0.7"/><path d="M 28 14 L 38 14" stroke="%23fff4d8" stroke-width="0.5" stroke-linecap="round" opacity="0.55"/><path d="M 64 22 L 78 22" stroke="%23fff4d8" stroke-width="0.5" stroke-linecap="round" opacity="0.6"/><path d="M 6 12 L 14 12" stroke="%23fff4d8" stroke-width="0.5" stroke-linecap="round" opacity="0.45"/><circle cx="62" cy="46" r="9" fill="%23fff4c8"/><circle cx="62" cy="46" r="13" fill="%23ffd078" opacity="0.5"/><circle cx="62" cy="46" r="20" fill="%23ff9258" opacity="0.22"/><path d="M 10 8 L 13 9 L 16 8 M 13 9 L 13 11" stroke="%23502028" stroke-width="0.6" fill="none" stroke-linecap="round" opacity="0.85"/><path d="M 30 6 L 32 7 L 34 6 M 32 7 L 32 8" stroke="%23502028" stroke-width="0.5" fill="none" stroke-linecap="round" opacity="0.75"/><polygon points="0,58 8,52 14,55 22,46 30,52 40,48 50,54 58,50 68,56 78,52 86,58 96,54 96,62 0,62" fill="%237c5478" opacity="0.7"/><polygon points="0,64 6,58 12,62 20,52 28,58 36,52 46,60 54,56 64,62 72,58 82,64 92,60 96,64 96,68 0,68" fill="%23582448"/><polygon points="0,70 8,66 14,68 22,62 30,66 38,62 48,68 56,64 66,68 74,64 84,68 92,66 96,70 96,74 0,74" fill="%2334121f"/><polygon points="0,96 0,76 14,78 28,82 44,78 60,80 76,76 88,78 96,80 96,96" fill="%2318080c"/><path d="M 36 78 Q 48 70 60 78" stroke="%231a0a14" stroke-width="0.4" fill="none" opacity="0.5"/><g transform="translate(50.6 75.2)"><rect x="-0.25" y="-3.0" width="0.5" height="2.6" fill="%23000000"/><rect x="-0.25" y="-3.0" width="0.4" height="0.6" fill="%23c64030" opacity="0.95"/><circle cx="0" cy="-3.7" r="0.7" fill="%23000000"/><path d="M 0.5 -2.3 L 1.6 -1.5 L 1.0 -0.4" stroke="%23000000" stroke-width="0.6" fill="none" stroke-linecap="round"/><path d="M -0.5 -2.3 L -1.4 -1.4 L -1.0 -0.3" stroke="%23000000" stroke-width="0.6" fill="none" stroke-linecap="round"/><path d="M 0.0 -0.4 L 1.4 0.5 L 0.8 1.6" stroke="%23000000" stroke-width="0.65" fill="none" stroke-linecap="round"/><path d="M 0.0 -0.4 L -1.0 0.6 L -1.6 1.7" stroke="%23000000" stroke-width="0.65" fill="none" stroke-linecap="round"/></g></svg>') no-repeat 0 0 / 100% 100%,
+        /* fiery dawn sky — deep indigo top, magenta band, fiery orange,
+           pale gold near horizon */
+        linear-gradient(180deg, #1a1438 0%, #321a4a 14%, #6a2a4a 28%, #c63a3e 44%, #ff7a40 58%, #ffa860 70%, #ffd884 82%, #ffe8a0 92%, #f6c884 100%);
+    }
+    /* House — hospital exterior at dusk: tall medical center silhouette with
+       red cross, scattered lit windows, overcast slate-blue sky. Cool, clinical,
+       a little dreary — fits "everybody lies." */
+    .decor.window-house {
+      background:
+        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" preserveAspectRatio="none"><ellipse cx="22" cy="20" rx="14" ry="3" fill="%23dde4ec" opacity="0.55"/><ellipse cx="68" cy="14" rx="16" ry="2.5" fill="%23dde4ec" opacity="0.45"/><rect x="0" y="86" width="96" height="10" fill="%237a8088"/><rect x="22" y="40" width="22" height="46" fill="%23586878"/><rect x="44" y="48" width="18" height="38" fill="%23485668"/><rect x="62" y="55" width="14" height="31" fill="%235a6a7c"/><rect x="32" y="34" width="2" height="6" fill="%23c92020"/><rect x="29" y="36" width="8" height="2" fill="%23c92020"/><rect x="6" y="68" width="14" height="18" fill="%234a5868"/><rect x="76" y="62" width="14" height="24" fill="%234a5868"/><rect x="25" y="44" width="2" height="2" fill="%23ffd470"/><rect x="29" y="44" width="2" height="2" fill="%23394452"/><rect x="33" y="44" width="2" height="2" fill="%23ffd470"/><rect x="37" y="44" width="2" height="2" fill="%23394452"/><rect x="41" y="44" width="2" height="2" fill="%23ffd470"/><rect x="25" y="50" width="2" height="2" fill="%23394452"/><rect x="29" y="50" width="2" height="2" fill="%23ffd470"/><rect x="33" y="50" width="2" height="2" fill="%23394452"/><rect x="37" y="50" width="2" height="2" fill="%23ffd470"/><rect x="41" y="50" width="2" height="2" fill="%23394452"/><rect x="25" y="56" width="2" height="2" fill="%23ffd470"/><rect x="29" y="56" width="2" height="2" fill="%23394452"/><rect x="33" y="56" width="2" height="2" fill="%23ffd470"/><rect x="37" y="56" width="2" height="2" fill="%23ffd470"/><rect x="41" y="56" width="2" height="2" fill="%23394452"/><rect x="25" y="62" width="2" height="2" fill="%23394452"/><rect x="29" y="62" width="2" height="2" fill="%23ffd470"/><rect x="33" y="62" width="2" height="2" fill="%23394452"/><rect x="37" y="62" width="2" height="2" fill="%23ffd470"/><rect x="41" y="62" width="2" height="2" fill="%23394452"/><rect x="25" y="68" width="2" height="2" fill="%23ffd470"/><rect x="29" y="68" width="2" height="2" fill="%23394452"/><rect x="33" y="68" width="2" height="2" fill="%23ffd470"/><rect x="37" y="68" width="2" height="2" fill="%23394452"/><rect x="41" y="68" width="2" height="2" fill="%23ffd470"/><rect x="25" y="74" width="2" height="2" fill="%23394452"/><rect x="29" y="74" width="2" height="2" fill="%23ffd470"/><rect x="33" y="74" width="2" height="2" fill="%23394452"/><rect x="37" y="74" width="2" height="2" fill="%23ffd470"/><rect x="41" y="74" width="2" height="2" fill="%23ffd470"/><rect x="47" y="52" width="2" height="2" fill="%23394452"/><rect x="51" y="52" width="2" height="2" fill="%23ffd470"/><rect x="55" y="52" width="2" height="2" fill="%23394452"/><rect x="47" y="58" width="2" height="2" fill="%23ffd470"/><rect x="51" y="58" width="2" height="2" fill="%23394452"/><rect x="55" y="58" width="2" height="2" fill="%23ffd470"/><rect x="47" y="64" width="2" height="2" fill="%23394452"/><rect x="51" y="64" width="2" height="2" fill="%23ffd470"/><rect x="55" y="64" width="2" height="2" fill="%23394452"/><rect x="47" y="70" width="2" height="2" fill="%23ffd470"/><rect x="51" y="70" width="2" height="2" fill="%23394452"/><rect x="55" y="70" width="2" height="2" fill="%23ffd470"/><rect x="47" y="76" width="2" height="2" fill="%23394452"/><rect x="51" y="76" width="2" height="2" fill="%23394452"/><rect x="55" y="76" width="2" height="2" fill="%23ffd470"/><rect x="65" y="60" width="2" height="2" fill="%23ffd470"/><rect x="69" y="60" width="2" height="2" fill="%23394452"/><rect x="73" y="60" width="2" height="2" fill="%23ffd470"/><rect x="65" y="66" width="2" height="2" fill="%23394452"/><rect x="69" y="66" width="2" height="2" fill="%23ffd470"/><rect x="73" y="66" width="2" height="2" fill="%23394452"/><rect x="65" y="72" width="2" height="2" fill="%23ffd470"/><rect x="69" y="72" width="2" height="2" fill="%23394452"/><rect x="73" y="72" width="2" height="2" fill="%23ffd470"/><rect x="65" y="78" width="2" height="2" fill="%23394452"/><rect x="69" y="78" width="2" height="2" fill="%23ffd470"/><rect x="73" y="78" width="2" height="2" fill="%23394452"/></svg>') no-repeat 0 0 / 100% 100%,
+        /* overcast dusk sky — slate blue with subtle warm under-glow at horizon */
+        linear-gradient(180deg, #3a4858 0%, #4a5a6c 30%, #6a7888 60%, #8a8c92 82%, #a89488 100%);
+    }
+    /* Connecting doors — rotated side-wall doors. Each door is the door sprite
+       tilted via CSS perspective+rotateY so it reads as the side face of a 3D
+       box receding into the wall. Adjacent rooms in the office grid line up
+       so room A's right door visually meets room B's left door across the
+       shared wall, reading as a corridor between offices. */
+    .door-left, .door-right {
+      position:absolute; bottom: 0;
+      width: 86px; height: 192px;
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,.4));
+      z-index: 1; pointer-events: none;
+    }
+    /* Sprite lives on a pseudo-element so we can mirror just the source art on
+       one side without disturbing the parent's perspective rotation. */
+    .door-left::before, .door-right::before {
+      content: ''; position:absolute; inset:0;
+      background-image: url('furniture.png');
+      background-size: 192px 3072px;       /* sheet 32x512 displayed at 6x */
+      background-position: -53px -624px;   /* center crop: 192px sprite, take middle 86; y=104*6 */
+      background-repeat: no-repeat;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+    }
+    /* Only the left door mirrors its source art — leaves the right door at the
+       sprite's natural orientation so the two knobs end up on opposite sides. */
+    .door-left::before { transform: scaleX(-1); }
+    .door-right {
+      right: -12px;
+      transform-origin: 100% 50%;
+      transform: perspective(420px) rotateY(-78deg);
+    }
+    .door-left {
+      left: -12px;
+      transform-origin: 0 50%;
+      transform: perspective(420px) rotateY(78deg);
+    }
+    .desk {
+      position:absolute; left:104px; right:80px; bottom:44px; height:16px;
+      background-image: url('furniture.png');
+      background-size: 64px 1024px;        /* sheet 32x512 displayed at 2x */
+      background-position: 0 var(--desk-y, 0);
+      background-repeat: repeat-x;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      z-index: 1;
+    }
+    .desk.oak    { --desk-y: 0;       --leg: #5b3c1f; --leg-h: #7a532e; --leg-i: #6a4524; }
+    .desk.steel  { --desk-y: -928px; --leg: #0d0f17; --leg-h: #2a3050; --leg-i: #1a1d2a; }
+    .desk.walnut { --desk-y: -960px; --leg: #1a0d06; --leg-h: #3e2114; --leg-i: #26140a; }
+    .desk.white  { --desk-y: -992px; --leg: #7d8395; --leg-h: #cdd2dc; --leg-i: #a0a7b8; }
+
+    /* 4-leg CSS layout — ::before = left pair, ::after = right pair.
+       Each pair: outer leg (tall, at edge) + inner leg (shorter, shifted ~9px toward center). */
+    .desk::before, .desk::after {
+      content: ""; position: absolute; top: 100%; height: 28px;
+      width: 22px;
+      pointer-events: none; z-index: 1;
+    }
+    /* Both legs hang from y=0 (the desk apron bottom) so their tops connect to
+       the table; inner leg ends earlier so it reads as shorter. */
+    .desk::before {
+      left: 2px;
+      background:
+        /* outer-left: full 28px, anchored at top */
+        linear-gradient(var(--leg, #5b3c1f) 0 86%, var(--leg-h, #7a532e) 86% 100%) 0 0 / 5px 28px no-repeat,
+        /* inner-left: also anchored at top, only 22px tall */
+        linear-gradient(var(--leg-i, #6a4524) 0 91%, var(--leg-h, #7a532e) 91% 100%) 11px 0 / 4px 22px no-repeat;
+    }
+    .desk::after {
+      right: 2px;
+      background:
+        /* outer-right: full 28px, anchored at top */
+        linear-gradient(var(--leg, #5b3c1f) 0 86%, var(--leg-h, #7a532e) 86% 100%) 17px 0 / 5px 28px no-repeat,
+        /* inner-right: also anchored at top, only 22px tall */
+        linear-gradient(var(--leg-i, #6a4524) 0 91%, var(--leg-h, #7a532e) 91% 100%) 7px 0 / 4px 22px no-repeat;
+    }
+    /* Floor band — plank tile drawn twice (top + bottom row) so the wood fills
+       the bottom 32px of the scene. Per-agent variants set --floor-y. */
+    .floor {
+      position:absolute; left:-12px; right:-12px; bottom:0; height:32px;
+      background-image: url('furniture.png');
+      background-size: 64px 1024px;            /* sheet 32x512 at 2x */
+      background-repeat: repeat-x;
+      background-position: 0 var(--floor-y, -800px);
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      z-index: 0;
+    }
+    .floor::after {
+      content:""; position:absolute; left:0; right:0; bottom:0; height:16px;
+      background-image: url('furniture.png');
+      background-size: 64px 1024px;
+      background-repeat: repeat-x;
+      background-position: 0 var(--floor-y, -800px);
+      image-rendering: pixelated; image-rendering: crisp-edges;
+    }
+    /* Skirting board — thin trim where wall meets floor (sits 3px above floor top). */
+    .floor::before {
+      content:""; position:absolute; left:0; right:0; top:-3px; height:3px;
+      background:
+        linear-gradient(180deg,
+          rgba(0,0,0,0.55) 0 33%,
+          var(--skirt, #2a1810) 33% 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .floor.oak       { --floor-y: -800px; --skirt: #2a1810; } /* y=400 * 2 */
+    .floor.ash       { --floor-y: -832px; --skirt: #4a3522; } /* y=416 * 2 */
+    .floor.cherry    { --floor-y: -864px; --skirt: #2a1008; } /* y=432 * 2 */
+    .floor.graphite  { --floor-y: -896px; --skirt: #14141a; } /* y=448 * 2 */
+    /* Ceiling lamp — compact fixture pinned to the very top of the scene */
+    .lamp {
+      position:absolute; top:0px; left:50%; width:3px; height:3px;
+      background:#1a1d33;
+      transform: translateX(-50%);
+      z-index: 0;
+    }
+    .lamp::before {
+      content:""; position:absolute; left:-9px; top:2px;
+      width:0; height:0;
+      border-left:10px solid transparent; border-right:10px solid transparent;
+      border-top:8px solid #2a3050;
+    }
+    .lamp::after {
+      content:""; position:absolute; left:-7px; top:8px;
+      width:16px; height:2px; background:#fff3b8;
+      box-shadow: 0 0 6px #ffe98a;
+    }
+    /* Soft light pool falling from the lamp onto the desk and floor */
+    .lamp-pool {
+      position:absolute; left:50%; top:10px; width:240px; height:200px;
+      transform: translateX(-50%);
+      background: radial-gradient(ellipse at 50% 0%,
+        rgba(255,236,170,.32) 0%,
+        rgba(255,236,170,.16) 28%,
+        rgba(255,236,170,.06) 55%,
+        rgba(255,236,170,0)   80%);
+      pointer-events:none; z-index: 3;
+      mix-blend-mode: screen;
+    }
+    .room.away .lamp::after { background:#5a5a4a; box-shadow:none; }
+    .room.away .lamp-pool { opacity: .25; }
+    /* Keyboard + mouse — universal desk-surface kit. Sits on the desk top in
+       front of the monitor, slightly occluding the monitor stand.
+       Desk top is at scene-y=60 from bottom; keyboard occupies y=55..60. */
+    .keyboard {
+      position:absolute; bottom:55px; left:116px;
+      width:60px; height:5px;
+      background: linear-gradient(180deg,
+        #0d1020 0 1px,
+        #2c3250 1px 4px,
+        #0d1020 4px 5px);
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.45));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .keyboard::before {
+      content:""; position:absolute; left:2px; right:2px; top:1px; height:2px;
+      background: repeating-linear-gradient(90deg,
+        #6b7090 0 2px, #2c3250 2px 4px);
+    }
+    .mouse {
+      position:absolute; bottom:55px; left:180px;
+      width:6px; height:5px;
+      background: linear-gradient(180deg,
+        #0d1020 0 1px,
+        #cdd2dc 1px 4px,
+        #0d1020 4px 5px);
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.4));
+      z-index: 2;
+      pointer-events: none;
+    }
+    /* Small per-agent desk accent — sits on the desk top to the left of the
+       monitor (scene-y=60, x≈106..114). Pixel-art mug/cup style, color per agent. */
+    .accent-cup {
+      position:absolute; bottom:60px; left:192px;
+      width:7px; height:10px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          var(--cup, #c34a4a) 1px 7px,
+          #0d1020 7px 8px,
+          rgba(0,0,0,0) 8px 10px);
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.45));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .accent-cup::before {
+      content:""; position:absolute; right:-2px; top:2px;
+      width:2px; height:4px;
+      background:
+        linear-gradient(90deg, #0d1020 0 1px, transparent 1px 2px),
+        var(--cup, #c34a4a);
+    }
+    .accent-cup.crimson  { --cup: #c34a4a; }
+    .accent-cup.emerald  { --cup: #3aa86b; }
+    .accent-cup.tea      { --cup: #d4b87a; }
+    .accent-cup.cyan     { --cup: #5acce0; }
+    .accent-cup.lavender { --cup: #8b8edc; }
+    .accent-cup.gold     { --cup: #d4a04a; }
+    .accent-cup.plum     { --cup: #8a5ea8; }
+    .accent-cup.white    { --cup: #e0e4ec; }
+    .accent-cup.pink     { --cup: #e07ab4; }
+    /* Harvey law books — messy cluster on the right side of the desk.
+       9 standing spines + 2 leaning + 3 stacked flat = 14 books total. */
+    .law-books {
+      position:absolute; bottom:60px; right:88px;
+      width:64px; height:38px;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.5));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .law-books .standing {
+      position:absolute; left:8px; bottom:0;
+      width:50px; height:26px;
+      background:
+        linear-gradient(90deg,
+          #0d1020 0 1px,
+          #3a2418 1px 5px, #5a3424 5px 6px,
+          #0d1020 6px 7px,
+          #5a2222 7px 11px, #7a3030 11px 12px,
+          #0d1020 12px 13px,
+          #2a4032 13px 17px, #3e5848 17px 18px,
+          #0d1020 18px 19px,
+          #4a2818 19px 23px, #6a3a24 23px 24px,
+          #0d1020 24px 25px,
+          #2a3050 25px 29px, #3e466a 29px 30px,
+          #0d1020 30px 31px,
+          #4a2828 31px 35px, #6a3838 35px 36px,
+          #0d1020 36px 37px,
+          #1f2616 37px 41px, #354228 41px 42px,
+          #0d1020 42px 43px,
+          #5a3a14 43px 47px, #7a5224 47px 48px,
+          #0d1020 48px 49px,
+          #3a2418 49px 50px);
+      border-top: 1px solid #0d1020;
+      border-bottom: 1px solid #0d1020;
+    }
+    .law-books .lean {
+      position:absolute; left:58px; bottom:0;
+      width:6px; height:22px;
+      background:
+        linear-gradient(90deg,
+          #0d1020 0 1px,
+          #2a4032 1px 3px, #3e5848 3px 4px,
+          #5a2222 4px 5px,
+          #0d1020 5px 6px);
+      border-top: 1px solid #0d1020;
+      border-bottom: 1px solid #0d1020;
+      transform: rotate(16deg);
+      transform-origin: 50% 100%;
+    }
+    .law-books .lean2 {
+      position:absolute; left:0; bottom:0;
+      width:5px; height:18px;
+      background:
+        linear-gradient(90deg,
+          #0d1020 0 1px,
+          #4a2422 1px 3px, #6a3838 3px 4px,
+          #0d1020 4px 5px);
+      border-top: 1px solid #0d1020;
+      border-bottom: 1px solid #0d1020;
+      transform: rotate(-12deg);
+      transform-origin: 50% 100%;
+    }
+    .law-books .stack {
+      position:absolute; left:14px; bottom:26px;
+      width:30px; height:5px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #5a2222 1px 4px,
+          #0d1020 4px 5px);
+    }
+    .law-books .stack2 {
+      position:absolute; left:10px; bottom:31px;
+      width:26px; height:4px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #4a2818 1px 3px,
+          #0d1020 3px 4px);
+      transform: rotate(-4deg);
+      transform-origin: 50% 100%;
+    }
+    .law-books .stack3 {
+      position:absolute; left:20px; bottom:35px;
+      width:18px; height:3px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #2a3050 1px 2px,
+          #0d1020 2px 3px);
+      transform: rotate(3deg);
+      transform-origin: 50% 100%;
+    }
+    /* House medical journals — librarian-tidy stack of textbooks: 8 standing
+       spines in clean medical colors (white, teals, navy, deep red), one
+       crowned with a small red cross, a flat stack on top, and a stethoscope
+       draped over the stack (thin black curve ending in a chest piece). */
+    .med-books {
+      position:absolute; bottom:60px; right:88px;
+      width:64px; height:38px;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.5));
+      z-index: 2;
+      pointer-events: none;
+    }
+    /* 8 upright spines — width 6 each, separator stripe between them.
+       Palette: clinical white, pale teal, deep teal, ocean blue, navy,
+       sage green, NEJM-red, cream. Each spine has a thin gold band detail. */
+    .med-books .standing {
+      position:absolute; left:6px; bottom:0;
+      width:50px; height:26px;
+      background:
+        linear-gradient(90deg,
+          #0d1020 0 1px,
+          #eef2f4 1px 5px, #c4cbd0 5px 6px,
+          #0d1020 6px 7px,
+          #6cbcb8 7px 11px, #4f8e8a 11px 12px,
+          #0d1020 12px 13px,
+          #1f4e58 13px 17px, #173842 17px 18px,
+          #0d1020 18px 19px,
+          #2c5e8e 19px 23px, #1c4068 23px 24px,
+          #0d1020 24px 25px,
+          #1a2540 25px 29px, #2a3656 29px 30px,
+          #0d1020 30px 31px,
+          #4f7a4c 31px 35px, #36563b 35px 36px,
+          #0d1020 36px 37px,
+          #b22b2b 37px 41px, #7c1a1a 41px 42px,
+          #0d1020 42px 43px,
+          #f2e9c8 43px 47px, #c9b98a 47px 48px,
+          #0d1020 48px 49px,
+          #1f4e58 49px 50px);
+      border-top: 1px solid #0d1020;
+      border-bottom: 1px solid #0d1020;
+    }
+    /* Flat stack on top — closed textbooks lying horizontally, two layers.
+       Top layer is the cleanest white volume with a red cross detail. */
+    .med-books .stack {
+      position:absolute; left:10px; bottom:26px;
+      width:30px; height:5px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #1f4e58 1px 4px,
+          #0d1020 4px 5px);
+    }
+    .med-books .stack2 {
+      position:absolute; left:6px; bottom:31px;
+      width:32px; height:5px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #eef2f4 1px 4px,
+          #0d1020 4px 5px);
+      transform: rotate(-3deg);
+      transform-origin: 50% 100%;
+    }
+    /* Red cross sitting flush on the white top book. Two crossed bars. */
+    .med-books .cross {
+      position:absolute; left:25px; bottom:32px;
+      width:6px; height:3px;
+      background:
+        linear-gradient(90deg,
+          transparent 0 2px,
+          #c92020 2px 4px,
+          transparent 4px 6px),
+        linear-gradient(180deg, #c92020 0 100%);
+      background-size: 100% 1px, 100% 100%;
+      background-repeat: no-repeat;
+      background-position: 0 1px, 0 0;
+    }
+    /* Stethoscope draped over the stack — a soft S-curve of dark tubing
+       ending in a small chrome chest-piece. Simulated with a curved border. */
+    .med-books .scope {
+      position:absolute; left:38px; bottom:24px;
+      width:18px; height:14px;
+      border: 1.5px solid #0d1020;
+      border-color: transparent #0d1020 #0d1020 transparent;
+      border-radius: 0 50% 50% 0;
+      background: transparent;
+    }
+    .med-books .scope-end {
+      position:absolute; left:50px; bottom:22px;
+      width:5px; height:5px;
+      background: #b8c0c8;
+      border: 1px solid #0d1020;
+      border-radius: 50%;
+    }
+    .trophy {
+      position:absolute; bottom:60px; right:104px;
+      width:16px; height:22px;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.55));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .trophy .base {
+      position:absolute; left:2px; bottom:0;
+      width:12px; height:4px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #6a4418 1px 3px,
+          #3a2410 3px 4px);
+    }
+    .trophy .stem {
+      position:absolute; left:7px; bottom:4px;
+      width:2px; height:3px;
+      background: #b58330;
+      box-shadow: -1px 0 0 #0d1020, 1px 0 0 #0d1020;
+    }
+    .trophy .cup {
+      position:absolute; left:3px; bottom:7px;
+      width:10px; height:12px;
+      background:
+        linear-gradient(180deg,
+          #fff3b8 0 2px,
+          #d4a04a 2px 7px,
+          #a0742a 7px 11px,
+          #6a4a14 11px 12px);
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    .trophy .handle-l {
+      position:absolute; left:0; bottom:10px;
+      width:3px; height:6px;
+      background: #b58330;
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    .trophy .handle-r {
+      position:absolute; right:0; bottom:10px;
+      width:3px; height:6px;
+      background: #b58330;
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    /* Silver mini-trophy — second-place chalice, sits left of the gold one. */
+    .mini-trophy {
+      position:absolute; bottom:60px; right:124px;
+      width:12px; height:16px;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.55));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .mini-trophy .base {
+      position:absolute; left:1px; bottom:0;
+      width:10px; height:3px;
+      background:
+        linear-gradient(180deg,
+          #0d1020 0 1px,
+          #6a4418 1px 2px,
+          #3a2410 2px 3px);
+    }
+    .mini-trophy .stem {
+      position:absolute; left:5px; bottom:3px;
+      width:2px; height:2px;
+      background: #a8a8b0;
+      box-shadow: -1px 0 0 #0d1020, 1px 0 0 #0d1020;
+    }
+    .mini-trophy .cup {
+      position:absolute; left:2px; bottom:5px;
+      width:8px; height:9px;
+      background:
+        linear-gradient(180deg,
+          #ffffff 0 1px,
+          #d8dce4 1px 5px,
+          #8a8e98 5px 8px,
+          #5a5e68 8px 9px);
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    .mini-trophy .handle-l {
+      position:absolute; left:0; bottom:7px;
+      width:2px; height:4px;
+      background: #a8a8b0;
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    .mini-trophy .handle-r {
+      position:absolute; right:0; bottom:7px;
+      width:2px; height:4px;
+      background: #a8a8b0;
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    /* Bronze medal hanging from a red ribbon. */
+    .medal {
+      position:absolute; bottom:60px; right:90px;
+      width:8px; height:14px;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.55));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .medal .ribbon {
+      position:absolute; left:3px; bottom:6px;
+      width:2px; height:8px;
+      background:
+        repeating-linear-gradient(180deg,
+          #c43838 0 2px,
+          #8a2222 2px 4px);
+      box-shadow: -1px 0 0 #0d1020, 1px 0 0 #0d1020;
+    }
+    .medal .disc {
+      position:absolute; left:0; bottom:0;
+      width:8px; height:7px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 30%,
+          #ffd86a 0 25%,
+          #cc7a3a 25% 65%,
+          #8a4818 65% 100%);
+      box-shadow: 0 0 0 1px #0d1020;
+    }
+    .medal .pip {
+      position:absolute; left:3px; bottom:2px;
+      width:2px; height:2px;
+      background: #fff3b8;
+    }
+    /* Engraved award plaque on a small wood stand. */
+    .plaque {
+      position:absolute; bottom:60px; right:144px;
+      width:14px; height:10px;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,.55));
+      z-index: 2;
+      pointer-events: none;
+    }
+    .plaque .stand {
+      position:absolute; left:5px; bottom:0;
+      width:4px; height:2px;
+      background: #3a2410;
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    .plaque .plate {
+      position:absolute; left:0; bottom:2px;
+      width:14px; height:8px;
+      background:
+        linear-gradient(180deg,
+          #4a3018 0 1px,
+          #6a4418 1px 4px,
+          #3a2410 4px 7px,
+          #0d1020 7px 8px);
+      box-shadow: inset 0 0 0 1px #0d1020;
+    }
+    .plaque .star {
+      position:absolute; left:5px; bottom:4px;
+      width:4px; height:3px;
+      background:
+        linear-gradient(180deg,
+          #fff3b8 0 1px,
+          #d4a04a 1px 3px);
+    }
+    .monitor {
+      position:absolute; left:108px; bottom:48px; width:96px; height:96px;
+      background-image: url('monitors.png');
+      background-size: 96px 1152px;        /* sheet 32x384 displayed at 3x (12 rows: 9 agents + ephraim + house + markethunting2 secondary) */
+      background-position: 0 calc(var(--sprite-row, 0) * -96px);
+      background-repeat: no-repeat;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,.3));
+      z-index: 1;                          /* on the back layer with the desk */
+    }
+    .monitor.secondary { left: 188px; right: auto; }  /* slight overlap onto main monitor */
+    .monitor.active { animation: monitor-glow 2.4s ease-in-out infinite; }
+    /* Signal-icon strip lives in the header center between agent name (left)
+       and status badge (right). Each icon renders only when its server-side
+       flag is true. No animation yet — we're observing real data first to
+       decide which ones deserve flashing later. */
+    .signals { display:flex; gap:6px; flex:1; justify-content:center; align-items:center; }
+    .signal-icon {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:22px; height:22px; border-radius:4px;
+      font-size:13px; line-height:1;
+      background:rgba(0,0,0,.25); border:1px solid var(--line);
+      cursor:help; user-select:none;
+    }
+    .signal-icon.sev-red    { background:rgba(255,60,60,.18);  border-color:#ff5050; color:#ffb0b0; }
+    .signal-icon.sev-yellow { background:rgba(255,200,80,.15); border-color:#ffd070; color:#ffd070; }
+    .signal-icon.sev-blue   { background:rgba(120,180,255,.12);border-color:#79b4ff; color:#a8c8ff; }
+    .chair {
+      position:absolute; left:40px; bottom:0; width:64px; height:144px;
+      background-image: url('furniture.png');
+      background-size: 64px 1024px;          /* sheet 32x512 at 2x */
+      background-position: 0 -656px;         /* y=328 * 2 */
+      background-repeat: no-repeat;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      z-index: 1;
+      transition: left 0.5s ease-in-out;
+    }
+    /* Working pose: chair tucked under the desk leading edge AND brought to
+       the FRONT layer so its backrest sits in front of the seated character —
+       view becomes "looking over the chair at the back of someone working".
+       The chair sprite is already a back-view (transparent top 8 rows) so the
+       character's head pokes naturally above the backrest. */
+    .chair.working { left: 108px; z-index: 3; }
+    .sprite {
+      /* Standing baseline. Walking shares this same bottom so feet stay grounded
+         consistently as the sprite moves. .sitting overrides upward only when the
+         walker has parked the sprite at the desk x. */
+      position:absolute; left:56px; bottom:7px; width:32px; height:48px;
+      background-image:url('sprites.png'); background-repeat:no-repeat;
+      background-position: 0 calc(var(--sprite-row, 0) * -48px);
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      --facing: 2.5;       /* Phase 2: flipped to -2.5 by .facing-left to mirror sprite */
+      transform: scale(var(--facing), 2.5); transform-origin: 50% 100%;
+      filter: drop-shadow(3px 3px 0 rgba(0,0,0,.35));
+      z-index: 2;
+    }
+    .sprite.facing-left { --facing: -2.5; }
+    .sprite.active  { animation: sprite-active 0.72s steps(4) infinite, sprite-breathe 3.2s ease-in-out infinite; }
+    .sprite.idle    { animation: sprite-idle 2.4s steps(4) infinite,   sprite-breathe 3.6s ease-in-out infinite; }
+    .sprite.sip     { animation: sprite-sip 2.0s steps(4) infinite,    sprite-breathe 3.6s ease-in-out infinite; }
+    .sprite.away    { animation: sprite-away 4.8s steps(4) infinite,   sprite-breathe 5.2s ease-in-out infinite; }
+    .sprite.walking { animation: sprite-walk 0.6s steps(4) infinite,   sprite-breathe 1.2s ease-in-out infinite; }
+    /* Position-driven posture: walker adds .sitting only when the sprite is
+       parked at the desk x AND the agent status is active. Lift compensates for
+       chair seat height so the body reads as seated, not floating mid-floor. */
+    .sprite.sitting { bottom: 32px; }
+    /* Seen-from-behind composition: at the work seat the character sits BETWEEN
+       the monitor (back layer) and the chair backrest (front layer). */
+    .sprite.sitting.active { z-index: 2; }
+    @keyframes sprite-active { from { background-position-x: 0; }      to { background-position-x: -128px; } }
+    @keyframes sprite-idle   { from { background-position-x: -128px; } to { background-position-x: -256px; } }
+    @keyframes sprite-sip    { from { background-position-x: -256px; } to { background-position-x: -384px; } }
+    @keyframes sprite-away   { from { background-position-x: -384px; } to { background-position-x: -512px; } }
+    @keyframes sprite-walk   { from { background-position-x: -512px; } to { background-position-x: -640px; } }
+    /* Phase 1 — idle breathing: subtle vertical bob on top of the frame cycle.
+       translateY is listed before scale so it stays in screen pixels (not scaled).
+       Per-state durations are deliberately offset from the frame-cycle period so
+       the bob and frame shift never lock into the same beat (breaks robotic feel).
+       Phase 2 — scaleX uses --facing so .facing-left can mirror the sprite without
+       fighting the breathe transform; walking uses a faster bob to mimic stride lift. */
+    @keyframes sprite-breathe {
+      0%, 100% { transform: translateY(0)    scale(var(--facing, 2.5), 2.5); }
+      50%      { transform: translateY(-2px) scale(var(--facing, 2.5), 2.5); }
+    }
+    .status-dot { position:absolute; left:88px; bottom:118px; width:12px; height:12px; border:3px solid var(--line); background:var(--green); }
+    .status-dot.active { animation: blink 1.2s infinite steps(2, end); }
+    .status-dot.idle { background:var(--amber); }
+    .status-dot.away { background:var(--red); }
+    .monitor.active::after { animation: flicker 0.8s infinite steps(3, end); }
+    .zzz { position:absolute; left:80px; bottom:140px; font-size:10px; color:rgba(236,242,255,.65); letter-spacing:2px; animation: zfloat 3.2s infinite ease-in-out; pointer-events:none; }
+    .room.away::before { background-image:linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.35)), linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px); }
+    /* Rectangular speech bubble with a triangular tail pointing down at the
+       sprite head. Single-line: bubble width grows with content (up to 200px
+       max), then ellipsis truncates anything longer so it can't push into the
+       wall board or off-scene. */
+    .speech { position:absolute; left:96px; top:96px; max-width:200px; background:#fff5d9; color:#2b2440; border:4px solid var(--line); padding:5px 9px; font-size:10px; line-height:1.35;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* Wall-mounted metrics board — sits between the wall art (left) and the
+       window (right), above where the speech bubble used to live. Same wood
+       frame as the window for visual consistency. Top inset accent shifts
+       color with status so the board feels alive (green/amber/grey). */
+    .statsboard {
+      position:absolute; top:24px; left:14px; width:170px; height:66px;
+      background:#1f2236;
+      border:3px solid #2a1810;
+      box-shadow: inset 0 0 0 2px #4a3018;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size:9px; line-height:14px; letter-spacing:.5px; text-transform:uppercase;
+      color:#d6dff0; padding:4px 6px; z-index:1;
+    }
+    .statsboard .row { display:flex; justify-content:space-between; gap:4px; }
+    .statsboard .label { color:#8a93b0; }
+    .statsboard .value { color:#fff; font-weight:700; }
+    .room.active .statsboard { box-shadow: inset 0 0 0 2px #4a3018, inset 0 2px 0 0 #59f7c7; }
+    .room.idle   .statsboard { box-shadow: inset 0 0 0 2px #4a3018, inset 0 2px 0 0 #ffd070; }
+    .room.away   .statsboard { box-shadow: inset 0 0 0 2px #4a3018, inset 0 2px 0 0 #707090; }
+    .speech::after { content:""; position:absolute; left:10px; bottom:-10px; border-width:10px 10px 0 0; border-style:solid; border-color:var(--line) transparent transparent transparent; }
+    .speech::before { content:""; position:absolute; left:13px; bottom:-5px; border-width:7px 7px 0 0; border-style:solid; border-color:#fff5d9 transparent transparent transparent; z-index:1; }
+    .room-footer { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; font-size:11px; color:var(--muted); }
+    .prop {
+      position:absolute; width:32px; height:32px;
+      background-image:url('props.png'); background-repeat:no-repeat;
+      background-position: 0 calc(var(--sprite-row, 0) * -32px);
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,.3));
+      z-index: 1;
+    }
+    .prop.pos-wall  { top:130px;   left:213px; transform: scale(2); transform-origin: 0 0; }
+    .prop.pos-floor { bottom:6px;  left:6px;   transform: scale(2); transform-origin: 0 100%; }
+    .prop.pos-desk  { bottom:52px; right:88px; transform: scale(2); transform-origin: 100% 100%; }
+    .prop.pos-shelf { top:78px;    left:8px;   transform: scale(1.75); transform-origin: 0 0; }
+
+    /* Ambient particles — children of .prop, drawn in the prop's 32x32 local space */
+    .prop .fx { position:absolute; pointer-events:none; }
+    .puff { width:2px; height:2px; background:rgba(255,255,255,.9); }
+    .bubble { width:1px; height:1px; background:rgba(255,255,255,.95); }
+    .scanline { left:4px; right:4px; height:1px; background:linear-gradient(90deg, transparent, rgba(110,255,180,.8), transparent); }
+    .led { width:2px; height:2px; background:#ff5a5a; box-shadow:0 0 1px #ff8a8a; }
+    .pin-pulse { width:2px; height:2px; background:#ff5a5a; }
+    .sparkle { width:1px; height:1px; background:#fff; }
+
+    /* Sage kettle — three staggered steam puffs */
+    .prop[data-fx="steam"] .puff { animation: puff-rise 2.4s ease-out infinite; }
+    .prop[data-fx="steam"] .puff:nth-child(1) { left:13px; top:4px; animation-delay:0s; }
+    .prop[data-fx="steam"] .puff:nth-child(2) { left:18px; top:4px; animation-delay:.8s; }
+    .prop[data-fx="steam"] .puff:nth-child(3) { left:22px; top:4px; animation-delay:1.6s; }
+    @keyframes puff-rise {
+      0%   { transform:translateY(2px); opacity:0; }
+      15%  { opacity:.9; }
+      100% { transform:translateY(-6px); opacity:0; }
+    }
+
+    /* Senku flasks — bubbles rising in each */
+    .prop[data-fx="bubbles"] .bubble { animation: bubble-rise 1.8s linear infinite; }
+    .prop[data-fx="bubbles"] .bubble:nth-child(1) { left:8px;  top:21px; animation-delay:0s; }
+    .prop[data-fx="bubbles"] .bubble:nth-child(2) { left:16px; top:21px; animation-delay:.6s; }
+    .prop[data-fx="bubbles"] .bubble:nth-child(3) { left:24px; top:21px; animation-delay:1.2s; }
+    .prop[data-fx="bubbles"] .bubble:nth-child(4) { left:9px;  top:21px; animation-delay:.9s; }
+    .prop[data-fx="bubbles"] .bubble:nth-child(5) { left:23px; top:21px; animation-delay:.3s; }
+    @keyframes bubble-rise {
+      0%   { transform:translateY(0); opacity:0; }
+      20%  { opacity:.9; }
+      100% { transform:translateY(-4px); opacity:0; }
+    }
+
+    /* MarketHunting monitor — vertical scanline sweep */
+    .prop[data-fx="scan"] .scanline { animation: scan-sweep 2.6s linear infinite; }
+    @keyframes scan-sweep {
+      0%   { top:6px;  opacity:0; }
+      10%  { opacity:.7; }
+      90%  { opacity:.7; }
+      100% { top:21px; opacity:0; }
+    }
+
+    /* D mic — pulsing red record LED */
+    .prop[data-fx="led"] .led { left:21px; top:14px; animation: led-pulse 1.6s ease-in-out infinite; }
+    @keyframes led-pulse {
+      0%,100% { opacity:.4; }
+      50%     { opacity:1; }
+    }
+
+    /* Commander war map — pulsing red pin */
+    .prop[data-fx="pin"] .pin-pulse { animation: pin-blink 1.4s ease-in-out infinite; }
+    .prop[data-fx="pin"] .pin-pulse:nth-child(1) { left:11px; top:10px; animation-delay:0s; }
+    .prop[data-fx="pin"] .pin-pulse:nth-child(2) { left:19px; top:18px; animation-delay:.5s; }
+    .prop[data-fx="pin"] .pin-pulse:nth-child(3) { left:24px; top:12px; animation-delay:1s; }
+    @keyframes pin-blink {
+      0%,80%,100% { opacity:0; }
+      10%,40%     { opacity:1; }
+    }
+
+    /* L candy pile — sparkle on lollipop */
+    .prop[data-fx="sparkle"] .sparkle { animation: sparkle-twinkle 2.6s ease-in-out infinite; }
+    .prop[data-fx="sparkle"] .sparkle:nth-child(1) { left:13px; top:14px; animation-delay:0s; }
+    .prop[data-fx="sparkle"] .sparkle:nth-child(2) { left:21px; top:15px; animation-delay:1.3s; }
+    @keyframes sparkle-twinkle {
+      0%,90%,100% { opacity:0; transform:scale(.5); }
+      40%,55%     { opacity:1; transform:scale(1); }
+    }
+
+    .room-footer .mood { color:var(--text); opacity:.85; }
+    .sidepanel { background:#1a1f38; border:4px solid var(--line); box-shadow:8px 8px 0 var(--shadow); padding:16px; align-self:start; position:sticky; top:12px; }
+    .panel-title { font-size:14px; font-weight:900; margin-bottom:12px; }
+    .meta { display:grid; gap:10px; font-size:12px; color:var(--muted); }
+    .meta strong { color:var(--text); display:block; margin-bottom:4px; }
+    .model-picker { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .model-select {
+      font:inherit; font-size:12px; color:var(--text);
+      background:#2b3156; border:2px solid var(--line); padding:4px 6px;
+      box-shadow:2px 2px 0 var(--shadow);
+    }
+    .model-select:disabled { opacity:.6; cursor:wait; }
+    .model-status { font-size:10px; padding:2px 6px; border:2px solid var(--line); }
+    .model-status.pending { color:#3b2c00; background:var(--amber); }
+    .model-status.ok      { color:#10291f; background:var(--green); }
+    .model-status.err     { color:#3b1111; background:var(--red); }
+    .legend { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .pill { font-size:10px; padding:6px 8px; border:2px solid var(--line); background:#2b3156; }
+    .pill.active { color:#10291f; background:var(--green); }
+    .pill.idle { color:#3b2c00; background:var(--amber); }
+    .pill.away { color:#3b1111; background:var(--red); }
+    .empty { color:var(--muted); font-size:12px; }
+
+    /* Cost block — used both in the side panel (per agent) and in the topbar
+       fleet strip. Window buttons share state across both via window.__costWindow
+       so the operator only has to pick once per page-load. */
+    .cost-block { display:flex; flex-direction:column; gap:6px; }
+    .cost-windows { display:flex; gap:4px; flex-wrap:wrap; }
+    .cost-win-btn {
+      font-size:10px; padding:4px 8px; border:2px solid var(--line);
+      background:#2b3156; color:var(--text); cursor:pointer; box-shadow:none;
+      letter-spacing:.4px; text-transform:uppercase;
+    }
+    .cost-win-btn.on { background:var(--accent2, #d6f6ff); color:#10131f; }
+    .cost-win-btn:disabled { cursor:default; }
+    .cost-total { font-size:18px; font-weight:900; color:var(--text); line-height:1.1; }
+    .cost-provs { display:flex; gap:6px; flex-wrap:wrap; }
+    .cost-prov {
+      font-size:10px; padding:3px 6px; border:2px solid var(--line);
+      background:#202644; color:var(--text);
+    }
+    .cost-prov.anthropic { background:#4a2a55; }
+    .cost-prov.openai    { background:#1f4a3a; }
+    .cost-meta { font-size:10px; color:var(--muted); }
+    .cost-warn { font-size:10px; color:#3b2c00; background:var(--amber); padding:2px 6px; border:2px solid var(--line); }
+    .cost-models { display:flex; flex-direction:column; gap:2px; margin-top:2px; }
+    .cost-model-row {
+      display:flex; justify-content:space-between; gap:8px;
+      font-size:11px; padding:2px 0; border-top:1px dashed rgba(255,255,255,.08);
+    }
+    .cost-model-row .name {
+      color:var(--text); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;
+    }
+    .cost-model-row .amt { color:var(--text); font-variant-numeric:tabular-nums; }
+    .fleet-cost .cost-model-row .name { max-width:140px; }
+
+    /* Fleet cost strip lives in the topbar, between the title block and the
+       action buttons. Compact horizontal layout — windows on the left, total
+       in the middle, per-provider chips on the right. */
+    .fleet-cost {
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+      padding:6px 10px; border:2px solid var(--line); background:rgba(17,19,34,.6);
+    }
+    .fleet-cost .cost-windows { gap:2px; }
+    .fleet-cost .cost-total { font-size:14px; }
+    .fleet-cost-label { font-size:10px; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+    @media (max-width: 720px) { .fleet-cost { width:100%; } }
+    @keyframes blink { 0%,49%{ opacity:1 } 50%,100%{ opacity:.35 } }
+    @keyframes monitor-glow {
+      0%,100% { filter: drop-shadow(2px 2px 0 rgba(0,0,0,.3)) brightness(1); }
+      50%     { filter: drop-shadow(2px 2px 0 rgba(0,0,0,.3)) brightness(1.18); }
+    }
+    @keyframes zfloat { 0%{ transform:translateY(0); opacity:0 } 30%{ opacity:.9 } 80%{ transform:translateY(-10px); opacity:.4 } 100%{ transform:translateY(-14px); opacity:0 } }
+    @media (max-width: 980px) { .wrap { grid-template-columns:1fr; } .sidepanel { position:static; } }
+
+    /* ---- Office dog ----
+       A roaming pixel mascot that walks across the bottom of the office grid,
+       randomly stops to sleep / pee / stare at the screen. Built from positioned
+       divs (no sprite sheet) so it fits the same chunky-pixel aesthetic as the
+       props. JS just toggles state classes; all motion / pose comes from CSS. */
+    /* ---- Office dog (fluffy white spitz/Samoyed, ~58×40) ----
+       Profile view facing right; .facing-left flips horizontally. Stocky
+       body with a fluffy lower edge, big round head, triangle pointed ears
+       up, short black snout, curled tail OVER the back (the spitz tell). */
+    .dog {
+      position:absolute; left:40px; bottom:8px;
+      width:58px; height:40px; pointer-events:none; z-index:4;
+      transition: left 0s linear; /* JS sets transition durations live */
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,.5));
+      image-rendering: pixelated;
+    }
+    .dog .dpart { position:absolute; }
+    /* Body — chunky oval. Belly = darker stripe along bottom for shading. */
+    .dog .body       { left:8px;  bottom:9px;  width:34px; height:14px; background:#f7f1e3; }
+    .dog .belly      { left:9px;  bottom:9px;  width:32px; height:3px;  background:#d8cfbe; }
+    .dog .chest      { left:36px; bottom:11px; width:6px;  height:8px;  background:#f7f1e3; }
+    .dog .fluff-l    { left:6px;  bottom:11px; width:2px;  height:5px;  background:#f7f1e3; }
+    .dog .fluff-r    { left:42px; bottom:13px; width:2px;  height:6px;  background:#f7f1e3; }
+    .dog .spot       { background:#d8d2c2; }
+    .dog .spot.s1    { left:16px; bottom:16px; width:6px;  height:4px; }
+    .dog .spot.s2    { left:26px; bottom:13px; width:5px;  height:3px; }
+    /* Head — big and round, sits above-front of body. */
+    .dog .head       { left:34px; bottom:18px; width:16px; height:13px; background:#f7f1e3; }
+    .dog .cheek      { left:34px; bottom:18px; width:4px;  height:5px;  background:#e6dccb; }
+    /* Short muzzle — small bump, NOT pointed like a mouse. */
+    .dog .muzzle     { left:48px; bottom:19px; width:5px;  height:5px;  background:#f7f1e3; }
+    .dog .nose       { left:51px; bottom:22px; width:3px;  height:3px;  background:#1a1a1a; }
+    .dog .mouth      { left:48px; bottom:18px; width:4px;  height:1px;  background:#1a1a1a; }
+    .dog .eye        { left:44px; bottom:25px; width:2px;  height:3px;  background:#0c0c0c; }
+    .dog .eye-shine  { left:44px; bottom:27px; width:1px;  height:1px;  background:#fff; }
+    /* Ears — triangle, pointing UP. Two layers per ear for inner color. */
+    .dog .ear        { left:34px; bottom:30px; width:5px;  height:6px;  background:#f7f1e3;
+                       clip-path: polygon(0 100%, 100% 100%, 50% 0); }
+    .dog .ear.r      { left:44px; background:#e2dac5; }
+    .dog .ear-inner  { left:35px; bottom:30px; width:3px;  height:3px;  background:#cf3a3a;
+                       clip-path: polygon(0 100%, 100% 100%, 50% 0); opacity:.45; }
+    .dog .ear-inner.r { left:45px; }
+    /* Collar + tag — sits at the neck. */
+    .dog .collar     { left:36px; bottom:15px; width:6px;  height:3px;  background:#cf3a3a; }
+    .dog .tag        { left:39px; bottom:13px; width:2px;  height:2px;  background:#ffd866; box-shadow:0 -1px 0 #cf3a3a; }
+    /* Curled tail — three blocks form a coil that sits OVER the back. */
+    .dog .tail-base  { left:4px;  bottom:18px; width:4px;  height:5px;  background:#f7f1e3; }
+    .dog .tail-mid   { left:4px;  bottom:22px; width:6px;  height:4px;  background:#f7f1e3;
+                       transform-origin:left bottom; }
+    .dog .tail-curl  { left:8px;  bottom:24px; width:6px;  height:4px;  background:#f7f1e3;
+                       transform-origin:left bottom; }
+    .dog .tail-tip   { left:12px; bottom:21px; width:3px;  height:4px;  background:#e2dac5; }
+    /* Legs — short and stocky, darker paws. */
+    .dog .leg        { width:5px; height:8px; bottom:1px; background:#f7f1e3; }
+    .dog .leg.fl     { left:34px; }
+    .dog .leg.fr     { left:40px; }
+    .dog .leg.bl     { left:11px; }
+    .dog .leg.br     { left:18px; }
+    .dog .paw        { width:5px; height:2px; bottom:0; background:#f7f1e3; }
+    .dog .paw.fl     { left:34px; }
+    .dog .paw.fr     { left:40px; }
+    .dog .paw.bl     { left:11px; }
+    .dog .paw.br     { left:18px; }
+    .dog.facing-left { transform: scaleX(-1); }
+
+    /* Walking — alternate leg pairs, wiggle the tail-curl. */
+    .dog.walking .leg.fl, .dog.walking .paw.fl,
+    .dog.walking .leg.br, .dog.walking .paw.br { animation: dog-leg-a 0.34s steps(2) infinite; }
+    .dog.walking .leg.fr, .dog.walking .paw.fr,
+    .dog.walking .leg.bl, .dog.walking .paw.bl { animation: dog-leg-b 0.34s steps(2) infinite; }
+    .dog.walking .tail-curl, .dog.walking .tail-tip {
+      animation: dog-curl-wiggle 0.4s ease-in-out infinite alternate;
+    }
+    /* Running — same leg / tail rig but on a faster cycle. */
+    .dog.running .leg.fl, .dog.running .paw.fl,
+    .dog.running .leg.br, .dog.running .paw.br { animation: dog-leg-a 0.16s steps(2) infinite; }
+    .dog.running .leg.fr, .dog.running .paw.fr,
+    .dog.running .leg.bl, .dog.running .paw.bl { animation: dog-leg-b 0.16s steps(2) infinite; }
+    .dog.running .tail-curl, .dog.running .tail-tip {
+      animation: dog-curl-wiggle 0.18s ease-in-out infinite alternate;
+    }
+    /* Tiny "speed lines" that only show while running. */
+    .dog.running .speed-1,
+    .dog.running .speed-2 { opacity:.85; animation: dog-speed-flick 0.18s steps(2) infinite; }
+    .dog .speed-1, .dog .speed-2 { background:#ffffff; opacity:0; }
+    .dog .speed-1 { left:0;  bottom:14px; width:5px; height:1px; }
+    .dog .speed-2 { left:0;  bottom:9px;  width:4px; height:1px; }
+    @keyframes dog-speed-flick {
+      0%   { transform:translateX(0); opacity:.85; }
+      100% { transform:translateX(-3px); opacity:.35; }
+    }
+    @keyframes dog-leg-a { 0% { height:8px; bottom:1px; } 100% { height:5px; bottom:4px; } }
+    @keyframes dog-leg-b { 0% { height:5px; bottom:4px; } 100% { height:8px; bottom:1px; } }
+    @keyframes dog-curl-wiggle { 0% { transform:rotate(-8deg); } 100% { transform:rotate(8deg); } }
+
+    /* Sleeping — body curled on floor, head tucked, ears flatten, Z's. */
+    .dog.sleeping .body      { bottom:2px; height:9px; }
+    .dog.sleeping .belly     { bottom:2px; }
+    .dog.sleeping .chest     { bottom:5px; height:5px; }
+    .dog.sleeping .fluff-l   { bottom:4px; height:4px; }
+    .dog.sleeping .fluff-r   { bottom:6px; height:5px; }
+    .dog.sleeping .spot.s1, .dog.sleeping .spot.s2 { bottom:7px; }
+    .dog.sleeping .head      { bottom:6px; left:38px; transform:rotate(15deg); }
+    .dog.sleeping .cheek     { bottom:6px; left:38px; }
+    .dog.sleeping .muzzle    { bottom:5px; left:50px; }
+    .dog.sleeping .nose      { bottom:7px; left:53px; }
+    .dog.sleeping .mouth     { bottom:5px; left:50px; }
+    .dog.sleeping .eye, .dog.sleeping .eye-shine { display:none; }
+    .dog.sleeping .ear       { bottom:16px; transform:rotate(-25deg); }
+    .dog.sleeping .ear.r     { bottom:14px; transform:rotate(15deg); }
+    .dog.sleeping .ear-inner,
+    .dog.sleeping .ear-inner.r { display:none; }
+    .dog.sleeping .collar, .dog.sleeping .tag { display:none; }
+    .dog.sleeping .leg, .dog.sleeping .paw   { display:none; }
+    .dog.sleeping .tail-base { bottom:7px; }
+    .dog.sleeping .tail-mid  { bottom:10px; transform:rotate(-15deg); }
+    .dog.sleeping .tail-curl { bottom:8px; transform:rotate(-30deg); }
+    .dog.sleeping .tail-tip  { bottom:5px; }
+    .dog .zz {
+      position:absolute; right:-14px; bottom:30px;
+      font-size:14px; font-weight:900; color:rgba(236,242,255,.85);
+      letter-spacing:1px; opacity:0;
+    }
+    .dog.sleeping .zz { animation: dog-zz 2.4s ease-in-out infinite; }
+    @keyframes dog-zz {
+      0%   { opacity:0; transform:translate(0, 0); }
+      30%  { opacity:.95; }
+      80%  { opacity:.4; transform:translate(4px, -12px); }
+      100% { opacity:0; transform:translate(6px, -16px); }
+    }
+
+    /* Peeing — back-left leg lifted, yellow puddle blooms underneath. */
+    .dog.peeing .leg.bl, .dog.peeing .paw.bl {
+      transform-origin:top right;
+      transform:rotate(-55deg);
+    }
+    .dog .puddle {
+      position:absolute; left:6px; bottom:-1px;
+      width:16px; height:4px; background:#ffd866;
+      border-radius:50%; opacity:0;
+      box-shadow:0 1px 0 rgba(0,0,0,.35);
+    }
+    .dog.peeing .puddle { animation: dog-puddle 1.6s ease-out forwards; }
+    @keyframes dog-puddle {
+      0%   { opacity:0; width:3px; }
+      40%  { opacity:.9; width:16px; }
+      100% { opacity:.6; width:20px; }
+    }
+
+    /* Staring at the screen — sit-back pose, head turns front-on (two eyes,
+       two pointed ears), pink tongue, tail-curl peeks behind. */
+    .dog.staring .body       { bottom:4px; height:13px; left:16px; width:24px; }
+    .dog.staring .belly      { bottom:4px; left:17px; width:22px; height:4px; }
+    .dog.staring .chest      { bottom:6px; left:22px; width:12px; height:8px; background:#f7f1e3; }
+    .dog.staring .fluff-l    { left:14px; bottom:6px; height:4px; }
+    .dog.staring .fluff-r    { left:40px; bottom:6px; height:4px; }
+    .dog.staring .spot.s1    { left:20px; bottom:9px; }
+    .dog.staring .spot.s2    { left:30px; bottom:7px; }
+    .dog.staring .head       { left:18px; bottom:17px; width:20px; height:13px; }
+    .dog.staring .cheek      { display:none; }
+    .dog.staring .muzzle     { left:25px; bottom:17px; width:6px; height:5px; }
+    .dog.staring .nose       { left:27px; bottom:20px; width:2px; height:2px; }
+    .dog.staring .mouth      { left:25px; bottom:16px; width:6px; height:1px; }
+    .dog.staring .tongue {
+      position:absolute; left:26px; bottom:14px; width:4px; height:2px; background:#ff7a8a;
+      animation: dog-pant 0.6s ease-in-out infinite alternate;
+    }
+    .dog.staring .eye        { left:22px; bottom:25px; width:2px; height:3px; }
+    .dog.staring .eye.r      { left:33px; }
+    .dog.staring .eye-shine  { left:22px; bottom:27px; }
+    .dog.staring .eye-shine.r{ left:33px; }
+    .dog.staring .ear        { left:14px; bottom:29px; transform:rotate(-12deg); }
+    .dog.staring .ear.r      { left:38px; transform:rotate(12deg); }
+    .dog.staring .ear-inner  { left:15px; bottom:29px; transform:rotate(-12deg); }
+    .dog.staring .ear-inner.r{ left:39px; transform:rotate(12deg); }
+    .dog.staring .collar     { left:20px; bottom:15px; width:18px; }
+    .dog.staring .tag        { left:29px; bottom:13px; }
+    .dog.staring .leg.fl, .dog.staring .paw.fl { left:20px; height:4px; }
+    .dog.staring .leg.fr, .dog.staring .paw.fr { left:34px; height:4px; }
+    .dog.staring .leg.bl, .dog.staring .leg.br,
+    .dog.staring .paw.bl, .dog.staring .paw.br { display:none; }
+    /* Tail curl peeks behind the seated body and thumps. */
+    .dog.staring .tail-base  { left:42px; bottom:10px; }
+    .dog.staring .tail-mid   { left:42px; bottom:14px; transform-origin:left bottom;
+                               animation: dog-tail-thump 0.4s ease-in-out infinite alternate; }
+    .dog.staring .tail-curl  { left:46px; bottom:16px; }
+    .dog.staring .tail-tip   { left:50px; bottom:13px; }
+    @keyframes dog-tail-thump { 0% { transform:rotate(-15deg);} 100% { transform:rotate(20deg);} }
+    @keyframes dog-pant       { 0% { height:2px; } 100% { height:3px; } }
+    /* Front-facing extras only show in 'staring' mode. */
+    .dog .tongue, .dog .eye-shine.r, .dog .eye.r { display:none; }
+    .dog.staring .tongue, .dog.staring .eye-shine.r, .dog.staring .eye.r { display:block; }
+
+    /* Products rail — full-width strip above the office grid. Mirrors
+       Control Center's "Products & apps" section but pixel-styled (chunky
+       borders, hard shadow, no rounded corners) to match the office look. */
+    .products-rail {
+      max-width:1200px; margin:0 auto 18px;
+      background:#1a1f38; border:4px solid var(--line);
+      box-shadow:8px 8px 0 var(--shadow); padding:18px 20px;
+    }
+    .rail-head { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .rail-eyebrow { font-size:10px; letter-spacing:.3em; text-transform:uppercase; color:var(--muted); }
+    .rail-title   { font-size:18px; font-weight:900; color:var(--text); margin:4px 0 0; }
+    .rail-lan     { font-size:11px; color:var(--muted); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
+    .rail-grid    { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
+    .rail-card    {
+      background:#2b3156; border:3px solid var(--line);
+      padding:12px 14px; display:flex; flex-direction:column; gap:8px;
+      box-shadow:4px 4px 0 var(--shadow);
+    }
+    .rail-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+    .rail-owner    { font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); }
+    .rail-name     { font-size:15px; font-weight:900; color:var(--text); margin-top:2px; }
+    .rail-status   { font-size:9px; padding:2px 6px; border:1px solid currentColor; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+    .rail-status.live     { color:#59f7c7; }
+    .rail-status.offline  { color:#ff7a7a; }
+    .rail-status.checking { color:#9aa0c2; }
+    .rail-status.wip      { color:#ffd070; }
+    .rail-status.planning { color:#79b4ff; }
+    .rail-status.paused   { color:#9aa0c2; }
+    .rail-desc  { font-size:12px; color:var(--muted); line-height:1.4; }
+    .rail-tags  { display:flex; flex-wrap:wrap; gap:4px; }
+    .rail-tag   { font-size:9px; padding:1px 5px; background:#1a1f38; border:1px solid var(--line); color:var(--muted); }
+    .rail-links { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; }
+    @media (max-width: 980px) {
+      .products-rail { margin:0 auto 14px; padding:14px 16px; }
+      .rail-head { flex-direction:column; align-items:flex-start; gap:4px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <div class="title">PIXEL OFFICE</div>
+      <div class="subtitle">cute shell on top, real control room underneath</div>
+    </div>
+    <div id="fleet-cost" class="fleet-cost" hidden></div>
+    <div class="actions">
+      <a id="openclaw-link" class="button secondary" target="_blank" rel="noreferrer">Open Control UI</a>
+      <button id="refresh-btn" title="Re-fetch data (long-press for full reload)">Refresh</button>
+      <button id="reload-btn" class="secondary" title="Reload page (clears cached HTML/JS)">Reload</button>
+    </div>
+  </div>
+
+  <section id="products-rail" class="products-rail" hidden>
+    <div class="rail-head">
+      <div>
+        <div class="rail-eyebrow">Built by the fleet</div>
+        <h2 class="rail-title">Products &amp; apps</h2>
+      </div>
+      <div class="rail-lan" id="rail-lan"></div>
+    </div>
+    <div id="rail-grid" class="rail-grid"></div>
+  </section>
+
+  <div class="wrap">
+    <div><div id="office" class="office"></div></div>
+    <aside class="sidepanel">
+      <div class="panel-title">Office panel</div>
+      <div class="meta" id="panel-meta"><div class="empty">Pick an agent room.</div></div>
+      <div class="legend">
+        <div class="pill active">active &lt; 1m</div>
+        <div class="pill idle">idle &lt; 10m</div>
+        <div class="pill away">away ≥ 10m</div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const officeEl = document.getElementById('office');
+    const panelMeta = document.getElementById('panel-meta');
+    const openclawLink = document.getElementById('openclaw-link');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const railEl = document.getElementById('products-rail');
+    const railGrid = document.getElementById('rail-grid');
+    const railLanEl = document.getElementById('rail-lan');
+    const fleetCostEl = document.getElementById('fleet-cost');
+
+    // Shared selected window for the topbar fleet strip and the side-panel
+    // cost block. Operator picks once, both views update together. Day is the
+    // most useful default — short enough to spot a runaway turn, long enough
+    // to actually carry numbers worth reading.
+    let costWindow = 'day';
+    let lastState = null;
+    // Rolling windows (server uses 24h / 30d / 365d relative to now) — labels
+    // say so explicitly so "30d" can't be confused with "May so far".
+    const COST_WINDOWS = [
+      { key: 'session', label: 'Session' },
+      { key: 'day',     label: '24h'  },
+      { key: 'month',   label: '30d'  },
+      { key: 'year',    label: '365d' },
+    ];
+    const PROVIDER_LABELS = {
+      'claude-cli':   'Anthropic',
+      'openai-codex': 'OpenAI',
+    };
+    function providerClass(key) {
+      if (key === 'claude-cli')   return 'anthropic';
+      if (key === 'openai-codex') return 'openai';
+      return '';
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // AGENT_CONFIG — single source of truth for everything an agent's room
+    // looks/feels like. Adding a new agent? Append ONE entry here and (if you
+    // want a unique CSS-painted window) one .decor.window-<id> CSS block.
+    // Every field is optional; missing fields fall back to AGENT_DEFAULTS so a
+    // brand-new agent renders cleanly without any config at all.
+    //
+    //   theme           wall/floor/accent palette (CSS vars on the room)
+    //   spriteRow       row index into sprites.png (0..N matching scripts/build-sprites.js)
+    //   ambient         { kind, particle, count } — emits prop ambient particles
+    //   propPos         'wall' | 'floor' | 'desk' | 'shelf'
+    //   propEnabled     false to suppress the prop entirely (markethunting uses
+    //                   the slot for a 2nd monitor)
+    //   secondaryMonitor optional { spriteRow }; renders a second monitor
+    //   desk            'oak' | 'steel' | 'walnut' | 'white'
+    //   cup             cup-color variant token (see CSS .cup.<variant>)
+    //   floor           'oak' | 'graphite' | 'ash' | 'cherry'
+    //   deskPieces      array of DESK_KIT names ('trophy','medal',…)
+    //   decor           'window-<id>' (matches a .decor.window-<id> CSS block);
+    //                   defaults to 'window-wide' when not provided
+    //   personalityLines short in-character quips for the speech bubble
+    // ─────────────────────────────────────────────────────────────────────
+    const AGENT_DEFAULTS = {
+      theme: { wall1:'#3a3f5e', wall2:'#262a44', floor1:'#806447', floor2:'#5a4330', accent:'#bcd0ff', accent2:'#eef3ff', shirt:'#9aa6d6', hair:'#191b30', prop:'plant', mood:'workspace', glow:'#bcd0ff' },
+      spriteRow: 0,
+      ambient: null,
+      propPos: 'wall',
+      propEnabled: true,
+      secondaryMonitor: null,
+      desk: 'oak',
+      cup: 'crimson',
+      floor: 'oak',
+      deskPieces: [],
+      decor: 'window-wide',
+      personalityLines: [],
+    };
+
+    const AGENT_CONFIG = {
+      main: {
+        theme: { wall1:'#344075', wall2:'#252f5d', floor1:'#8f6d4b', floor2:'#65462f', accent:'#7ed1ff', accent2:'#e4f8ff', shirt:'#7f93ff', hair:'#10182f', prop:'plant', mood:'commander nest', glow:'#77f1cc' },
+        spriteRow: 0,
+        ambient: { kind: 'pin', particle: 'pin-pulse', count: 3 },
+        propPos: 'wall',           // war map mounted on cork board
+        desk: 'walnut',            // commander nest — dark brown executive desk
+        cup: 'crimson',
+        floor: 'oak',
+        deskPieces: ['plaque', 'mini-trophy', 'trophy', 'medal'],
+        decor: 'window-eagle',
+        personalityLines: ['noted.', 'all in place.', 'fleet looks good.', 'let me pin that.', 'watching the board.', 'another pattern.'],
+      },
+      markethunting: {
+        theme: { wall1:'#24483e', wall2:'#18332d', floor1:'#806447', floor2:'#5a4330', accent:'#81f0bf', accent2:'#dfffee', shirt:'#4bd38d', hair:'#17251f', prop:'chart', mood:'market pit', glow:'#6dffb4' },
+        spriteRow: 1,
+        ambient: { kind: 'scan', particle: 'scanline', count: 1 },
+        propPos: 'desk',
+        propEnabled: false,        // chart monitor slot used by secondary monitor instead
+        secondaryMonitor: { spriteRow: 11 }, // row 11 = paintOrderFlow (after house was inserted at 10)
+        desk: 'steel',             // trader pit — glass + hairpin steel
+        cup: 'emerald',
+        floor: 'graphite',         // market pit — cool dark trading floor
+        decor: 'window-market',
+        personalityLines: ['chart never lies.', 'candles talking.', 'buy the dip?', 'follow the volume.', 'setup forming.', 'EOD looks clean.'],
+      },
+      sage: {
+        theme: { wall1:'#39514a', wall2:'#263831', floor1:'#8c7157', floor2:'#685240', accent:'#9fe8d8', accent2:'#ecfff9', shirt:'#8fd3b0', hair:'#274237', prop:'book', mood:'tea corner', glow:'#b6f7de' },
+        spriteRow: 2,
+        ambient: { kind: 'steam', particle: 'puff', count: 3 },
+        propPos: 'desk',           // kettle on counter
+        desk: 'oak',               // tea corner — homey wood
+        cup: 'tea',
+        floor: 'ash',              // tea corner — soft pale
+        decor: 'window-sage',
+        personalityLines: ['calm and steady.', 'another loop done.', 'tea is hot.', 'all good here.', 'just observing.'],
+      },
+      senku: {
+        theme: { wall1:'#37505d', wall2:'#223740', floor1:'#7e6550', floor2:'#5a4839', accent:'#78dbff', accent2:'#e3fbff', shirt:'#77f6d8', hair:'#d7f268', prop:'flask', mood:'lab bench', glow:'#7cffef' },
+        spriteRow: 3,
+        ambient: { kind: 'bubbles', particle: 'bubble', count: 5 },
+        propPos: 'desk',           // flask rack on the lab bench
+        desk: 'steel',             // lab bench — metal + glass
+        cup: 'cyan',
+        floor: 'graphite',         // lab bench — clean dark composite
+        decor: 'window-senku',
+        personalityLines: ['10 billion percent.', 'to the lab!', 'experiment running.', 'data is beautiful.', 'science is fun.', 'mixing reagents.'],
+      },
+      shikamaru: {
+        theme: { wall1:'#3f3d67', wall2:'#292745', floor1:'#85705a', floor2:'#5f4d3f', accent:'#d5d7ff', accent2:'#f5f6ff', shirt:'#a8adf6', hair:'#191b30', prop:'columns', mood:'policy cave', glow:'#b8c0ff' },
+        spriteRow: 4,
+        propPos: 'desk',           // shogi board on desk
+        desk: 'walnut',            // policy cave — heavy executive
+        cup: 'lavender',
+        floor: 'oak',
+        decor: 'window-shikamaru',
+        personalityLines: ['what a drag.', 'thinking it through.', '200 moves ahead.', 'patience.', 'let me think.'],
+      },
+      tyrion: {
+        theme: { wall1:'#58473b', wall2:'#3c3028', floor1:'#8d6b4a', floor2:'#5e452f', accent:'#ffd27a', accent2:'#fff1ca', shirt:'#c79b59', hair:'#2b1d16', prop:'briefcase', mood:'capital desk', glow:'#ffd77d' },
+        spriteRow: 5,
+        propPos: 'desk',           // ledgers + wine on desk
+        desk: 'walnut',            // capital desk — big walnut
+        cup: 'gold',
+        floor: 'cherry',           // capital desk — rich red
+        decor: 'window-tyrion',
+        personalityLines: ['knowledge is power.', 'pour me a cup.', 'small council.', 'wits and wine.', 'I drink, I know.'],
+      },
+      harvey: {
+        theme: { wall1:'#4c3945', wall2:'#32242c', floor1:'#8a6b55', floor2:'#654b3d', accent:'#d7d0ff', accent2:'#f5f2ff', shirt:'#b59fe9', hair:'#21141c', prop:'scales', mood:'case files', glow:'#d8c5ff' },
+        spriteRow: 6,
+        propPos: 'floor',          // tall filing cabinet
+        desk: 'walnut',            // case files — formal walnut
+        cup: 'plum',
+        floor: 'cherry',           // case files — formal red
+        deskPieces: ['law-books'],
+        decor: 'window-harvey',
+        personalityLines: ["I don't lose.", 'got it covered.', 'best closer.', 'objection.', 'case closed.'],
+      },
+      l: {
+        theme: { wall1:'#2f334d', wall2:'#202334', floor1:'#75685b', floor2:'#564a41', accent:'#dce4ff', accent2:'#fbfdff', shirt:'#9db4d8', hair:'#0d111f', prop:'magnifier', mood:'audit bunker', glow:'#cbd7ff' },
+        spriteRow: 7,
+        ambient: { kind: 'sparkle', particle: 'sparkle', count: 2 },
+        propPos: 'desk',           // candy pile on desk
+        desk: 'white',             // audit bunker — sterile white
+        cup: 'white',
+        floor: 'graphite',         // audit bunker — cool dark
+        decor: 'window-l',
+        personalityLines: ['watching everyone.', 'logged.', 'interesting...', 'patterns emerging.', 'I see you.', 'noted in the log.'],
+      },
+      d: {
+        theme: { wall1:'#4a364f', wall2:'#2f2234', floor1:'#7e5d49', floor2:'#593f32', accent:'#ff8ccd', accent2:'#ffe0f1', shirt:'#d07ac4', hair:'#151226', prop:'mic', mood:'studio desk', glow:'#ff9ed8' },
+        spriteRow: 8,
+        ambient: { kind: 'led', particle: 'led', count: 1 },
+        propPos: 'desk',
+        desk: 'white',             // studio desk — clean white
+        cup: 'pink',
+        floor: 'cherry',           // studio desk — rich warm
+        decor: 'window-d',
+        personalityLines: ['feel the field.', 'vibrating right.', 'good energy.', 'in the flow.', 'frequency dialed.'],
+      },
+      ephraim: {
+        theme: { wall1:'#3a4452', wall2:'#252c38', floor1:'#5a5e62', floor2:'#3e4146', accent:'#e84a3a', accent2:'#ffd0c8', shirt:'#1d2230', hair:'#15100a', prop:'gym-rack', mood:'training room', glow:'#ff6a5a' },
+        spriteRow: 9,
+        ambient: { kind: 'pin', particle: 'pin-pulse', count: 2 }, // pulse — heartbeat / set-rep cadence
+        propPos: 'wall',           // pull-up bar + dumbbell rack on wall
+        desk: 'steel',             // training room — utilitarian metal
+        cup: 'cyan',               // hydration / electrolyte
+        floor: 'graphite',         // gym rubber feel
+        deskPieces: ['medal'],     // a single medal still sits on the desk (career hardware)
+        decor: 'window-ephraim',   // sunrise track view — dawn run vibe
+        personalityLines: ['form first.', 'RPE 7.', 'log it.', 'rest is work.', 'trust the plan.', 'one more rep.', 'sustainable.'],
+      },
+      house: {
+        theme: { wall1:'#3e4f5a', wall2:'#293841', floor1:'#7a8088', floor2:'#52575e', accent:'#dff3ff', accent2:'#ffffff', shirt:'#5a8aa3', hair:'#7c7c7c', prop:'xray', mood:'diagnostics room', glow:'#bfe6ff' },
+        spriteRow: 10,
+        ambient: { kind: 'sparkle', particle: 'sparkle', count: 2 }, // glow flicker from the x-ray light box
+        propPos: 'wall',           // x-ray viewer + clipboard mounted on wall
+        desk: 'steel',             // exam room — clinical metal
+        cup: 'white',              // coffee / clinic ceramic
+        floor: 'ash',              // clinical linoleum feel
+        deskPieces: ['med-books'], // medical journals — clinical palette + red cross + stethoscope drape
+        decor: 'window-house',     // hospital exterior at dusk with lit windows
+        personalityLines: ['everybody lies.', 'differential.', 'it is never lupus.', 'rule it out.', 'pain is data.', 'idiot move.', 'next test.'],
+      },
+    };
+
+    // Returns merged config for an agent id, falling back to AGENT_DEFAULTS for
+    // any field the entry omits. Unknown agent ids get a clean default room.
+    function agentConfig(id) {
+      const entry = AGENT_CONFIG[id] || {};
+      return { ...AGENT_DEFAULTS, ...entry };
+    }
+
+    function addAmbient(prop, agentId) {
+      const cfg = agentConfig(agentId).ambient;
+      if (!cfg) return;
+      prop.dataset.fx = cfg.kind;
+      for (let i = 0; i < cfg.count; i++) {
+        prop.appendChild(el('span', `fx ${cfg.particle}`));
+      }
+    }
+
+    // Desk trinkets that sit on the desk top. Each entry maps the wrapper class
+    // to the list of child span classes the CSS expects. Add a new piece by
+    // writing a CSS block (.piece + .piece .part {...}) and listing its parts
+    // here, then list the piece names in AGENT_CONFIG.<id>.deskPieces.
+    const DESK_KIT = {
+      trophy:        ['base', 'stem', 'cup', 'handle-l', 'handle-r'],
+      'mini-trophy': ['base', 'stem', 'cup', 'handle-l', 'handle-r'],
+      medal:         ['ribbon', 'disc', 'pip'],
+      plaque:        ['stand', 'plate', 'star'],
+      'law-books':   ['standing', 'lean', 'lean2', 'stack', 'stack2', 'stack3'],
+      'med-books':   ['standing', 'stack', 'stack2', 'cross', 'scope', 'scope-end'],
+    };
+
+    function buildDeskPiece(name) {
+      const parts = DESK_KIT[name];
+      if (!parts) return null;
+      const piece = el('div', name);
+      parts.forEach(p => piece.appendChild(el('span', p)));
+      return piece;
+    }
+
+    // Quip bank rotates slowly (~1 per minute) so the speech bubble feels
+    // alive without jittering on every 5s poll. Each agent's id is hashed
+    // into the minute slot so different rooms land on different lines
+    // simultaneously. Source list lives in AGENT_CONFIG.<id>.personalityLines.
+    function pickQuip(agent) {
+      const lines = agentConfig(agent.id).personalityLines;
+      if (!lines || !lines.length) return agent.vibe || '';
+      const slot = Math.floor(Date.now() / 60000);
+      let h = 0;
+      for (let i = 0; i < agent.id.length; i++) h = (h * 31 + agent.id.charCodeAt(i)) | 0;
+      const idx = (((slot + Math.abs(h)) % lines.length) + lines.length) % lines.length;
+      return lines[idx];
+    }
+
+    // Speech bubble is single-line, max-width 200px (~32 chars at 10px font).
+    // Clamp text at 32 chars so the bubble grows with content but stays inside
+    // its max-width without falling back to CSS ellipsis truncation.
+    function clampSpeech(s) {
+      const t = String(s ?? '').trim();
+      if (t.length <= 32) return t;
+      return t.slice(0, 30).trimEnd() + '…';
+    }
+
+    // Compact "1.2k" / "124k" / "1.05M" formatter for token counts.
+    function formatK(n) {
+      const v = Number(n) || 0;
+      if (v >= 1_000_000) return (v / 1_000_000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+      if (v >= 100_000)   return Math.round(v / 1_000) + 'k';
+      if (v >= 1_000)     return (v / 1_000).toFixed(1).replace(/\.0$/, '') + 'k';
+      return String(v);
+    }
+
+    // "2917k/1049k (278%) · 🗄 99%" — mirrors the gateway's
+    // `openclaw sessions` Tokens column (totalTokens / contextTokens) plus
+    // a cache-hit rate. Empty string when the latest session has no token
+    // data so the header falls back to name+badge cleanly.
+    function formatContextBar(agent) {
+      if (!agent.contextWindow || !agent.totalTokens) return '';
+      return `${formatK(agent.totalTokens)}/${formatK(agent.contextWindow)} (${agent.contextPct}%) · 🗄 ${agent.cachePct}%`;
+    }
+
+    function ctxBand(pct) {
+      const p = Number(pct) || 0;
+      if (p >= 80) return 'hot';
+      if (p >= 50) return 'warn';
+      return 'ok';
+    }
+
+    // Strip the trailing " ago" from "3m ago" / "1h ago" so the wall board
+    // can fit the value in its narrow right column. Falls back to '—'.
+    function shortLastSeen(s) {
+      if (!s) return '—';
+      return String(s).replace(/\s*ago\s*$/i, '').trim() || '—';
+    }
+
+    // Wall-mounted metrics board — Phase 1 stats surfacing. Reads only fields
+    // already in /api/pixel-office/state (no server changes). 4 rows: model,
+    // sessions/notes combined, session-channel breakdown, freshness.
+    // Header signal strip — shows one icon per truthy signal in agent.signals.
+    // Severity colors are independent from "is this real" — we'll trim the
+    // list once we see what fires in practice.
+    //   🚨 ABORTED — last session ended mid-run                       (red)
+    //   🔁 STREAK  — recurring task failed 2x in a row                (red)
+    //   ⚠ RECENT  — task failure in the last 6 hours                  (red)
+    //   📈 CTX    — context window ≥95% full                          (yellow)
+    //   ↩ FALL    — running on fallback model, not primary             (yellow)
+    const SIGNAL_DEFS = [
+      { key: 'aborted',    icon: '🚨', sev: 'red',    label: 'ABORTED — last session ended mid-run' },
+      { key: 'streak',     icon: '🔁', sev: 'red',    label: (d) => `STREAK — ${d.streak} recurring task(s) failed 2× in a row` },
+      { key: 'recentFail', icon: '⚠',  sev: 'red',    label: (d) => `RECENT — ${d.recentFail} task issue(s) in last 6h` },
+      { key: 'ctxHot',     icon: '📈', sev: 'yellow', label: (d) => `CONTEXT — ${d.ctxPct}% of window used` },
+      { key: 'fallback',   icon: '↩',  sev: 'yellow', label: (d) => `FALLBACK — running on ${d.modelDisplay} (primary: ${d.modelPrimary})` },
+    ];
+    function buildSignalStrip(agent) {
+      const strip = el('div', 'signals');
+      const sig = agent.signals || {};
+      const det = agent.signalDetail || {};
+      for (const def of SIGNAL_DEFS) {
+        if (!sig[def.key]) continue;
+        const node = el('span', `signal-icon sev-${def.sev}`, def.icon);
+        node.title = typeof def.label === 'function' ? def.label(det) : def.label;
+        strip.appendChild(node);
+      }
+      return strip;
+    }
+
+    function buildStatsBoard(agent) {
+      const board = el('div', 'statsboard');
+      const sn  = `${agent.sessionCount ?? 0}/${agent.memoryNotes ?? 0}`;
+      const dgs = `${agent.directCount ?? 0}/${agent.groupCount ?? 0}/${agent.cronCount ?? 0}/${agent.subagentCount ?? 0}`;
+      const rows = [
+        ['MODEL',           agent.modelDisplay || agent.modelPrimary || '—'],
+        ['SES/NOTES',       sn],
+        ['DIR/GRP/CRN/SUB', dgs],
+        ['TOKENS',          formatK(agent.totalTokens)],
+      ];
+      rows.forEach(([label, value]) => {
+        const row = el('div', 'row');
+        row.appendChild(el('span', 'label', label));
+        row.appendChild(el('span', 'value', String(value)));
+        board.appendChild(row);
+      });
+      return board;
+    }
+
+    // Map runtime status -> sprite animation class.
+    function spriteClass(agent) {
+      if (agent.status === 'active') return 'active';
+      if (agent.status === 'away') return 'away';
+      // For idle: deterministically vary between idle / sip per agent so the
+      // office doesn't look like 8 agents all swaying in lockstep.
+      const seed = (agent.id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const minute = Math.floor(Date.now() / 60000);
+      return ((seed + minute) % 3 === 0) ? 'sip' : 'idle';
+    }
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+
+    function roomRole(agent) {
+      if (agent.channel === 'telegram') return 'chat desk';
+      if (agent.sessionKey && agent.sessionKey.includes(':cron:')) return 'scheduled run';
+      return 'specialist desk';
+    }
+
+    function getTheme(agent) { return agentConfig(agent.id).theme; }
+
+    function applyTheme(room, theme) {
+      room.style.setProperty('--wall1', theme.wall1);
+      room.style.setProperty('--wall2', theme.wall2);
+      room.style.setProperty('--floor1', theme.floor1);
+      room.style.setProperty('--floor2', theme.floor2);
+      room.style.setProperty('--accent', theme.accent);
+      room.style.setProperty('--accent2', theme.accent2);
+      room.style.setProperty('--shirt', theme.shirt);
+      room.style.setProperty('--hair', theme.hair);
+      room.style.setProperty('--glow', theme.glow);
+    }
+
+    // Per-million-token USD rates by model short name. Numbers are
+    // approximate published list prices — meant for an "is this getting
+    // expensive?" gut check, not invoicing. Add a model here when its
+    // pricing diverges; everything else falls through to MODEL_COST_FALLBACK.
+    const MODEL_COSTS = {
+      'claude-opus-4-7':    { input: 15,    output: 75,  cacheRead: 1.50, cacheWrite: 18.75 },
+      'claude-opus-4-6':    { input: 15,    output: 75,  cacheRead: 1.50, cacheWrite: 18.75 },
+      'claude-sonnet-4-6':  { input: 3,     output: 15,  cacheRead: 0.30, cacheWrite: 3.75  },
+      'claude-sonnet-4-5':  { input: 3,     output: 15,  cacheRead: 0.30, cacheWrite: 3.75  },
+      'claude-haiku-4-5':   { input: 1,     output: 5,   cacheRead: 0.10, cacheWrite: 1.25  },
+      'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheRead: 0.10, cacheWrite: 1.25 },
+      'gpt-5.4':            { input: 1.25,  output: 10,  cacheRead: 0.125, cacheWrite: 1.25 },
+      'gpt-5.4-mini':       { input: 0.25,  output: 2,   cacheRead: 0.025, cacheWrite: 0.25 },
+    };
+    const MODEL_COST_FALLBACK = { input: 3, output: 15, cacheRead: 0.30, cacheWrite: 3.75 };
+
+    function estimateCostUSD(agent) {
+      const model = agent.modelDisplay || agent.modelPrimary;
+      const rates = MODEL_COSTS[model] || MODEL_COST_FALLBACK;
+      const ct = (n, perM) => (Number(n) || 0) * perM / 1_000_000;
+      return ct(agent.inputTokens, rates.input)
+           + ct(agent.outputTokens, rates.output)
+           + ct(agent.cacheRead,  rates.cacheRead)
+           + ct(agent.cacheWrite, rates.cacheWrite);
+    }
+    function formatUSD(n) {
+      if (n >= 100) return '$' + n.toFixed(0);
+      if (n >= 10)  return '$' + n.toFixed(1);
+      if (n >= 1)   return '$' + n.toFixed(2);
+      if (n >= 0.01)return '$' + n.toFixed(3);
+      return '<$0.01';
+    }
+
+    // Build a window-picker + total + per-provider chip block for agent or
+    // fleet usage. `usageMap` is {session, day, month, year} from the API.
+    // Buttons flip `costWindow` and re-render both the side panel (if an agent
+    // is pinned) and the topbar fleet strip so the operator only picks once.
+    function buildCostBlock(usageMap) {
+      if (!usageMap) {
+        const wrap = el('div', 'cost-block');
+        wrap.appendChild(el('span', 'cost-meta', 'No cost data yet — scanning…'));
+        return wrap;
+      }
+      const wrap = el('div', 'cost-block');
+
+      // Window selector buttons
+      const winRow = el('div', 'cost-windows');
+      COST_WINDOWS.forEach(({ key, label }) => {
+        const btn = el('button', 'cost-win-btn' + (key === costWindow ? ' on' : ''));
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.addEventListener('click', () => {
+          costWindow = key;
+          // Re-render panel (if an agent is pinned) and fleet strip
+          if (lastState) {
+            const pinned = selectedAgentId
+              ? lastState.agents.find(a => a.id === selectedAgentId)
+              : lastState.agents[0];
+            if (pinned) renderPanel(pinned);
+            renderFleetCost(lastState);
+          }
+        });
+        winRow.appendChild(btn);
+      });
+      wrap.appendChild(winRow);
+
+      const bucket = usageMap[costWindow] || { billed: 0, byProvider: {}, count: 0 };
+      const billed = bucket.billed || 0;
+
+      // All providers are flat-rate subscriptions — show prorated flat fees only,
+      // no per-token estimates or per-model breakdown.
+      wrap.appendChild(el('div', 'cost-total', formatUSD(billed)));
+
+      const billingModes = window.__billingModes || {};
+      const provRow = el('div', 'cost-provs');
+      Object.entries(bucket.byProvider).forEach(([key, val]) => {
+        const label = PROVIDER_LABELS[key] || key;
+        const mode = billingModes[key];
+        const tag = mode === 'subscription' ? ' (sub)' : mode === 'api' ? ' (api)' : '';
+        const chip = el('span', `cost-prov ${providerClass(key)}`, `${label}: ${formatUSD(val)}${tag}`);
+        provRow.appendChild(chip);
+      });
+      if (provRow.childNodes.length > 0) wrap.appendChild(provRow);
+
+      if (bucket.count > 0) {
+        wrap.appendChild(el('span', 'cost-meta', `${bucket.count} turn${bucket.count === 1 ? '' : 's'}`));
+      }
+
+      return wrap;
+    }
+
+    // Renders the topbar fleet-wide cost strip using the fleet.usage rollup.
+    function renderFleetCost(state) {
+      const fu = state.fleet && state.fleet.usage;
+      if (!fu) { fleetCostEl.hidden = true; return; }
+      fleetCostEl.hidden = false;
+      fleetCostEl.innerHTML = '';
+      fleetCostEl.appendChild(el('span', 'fleet-cost-label', 'Fleet'));
+      fleetCostEl.appendChild(buildCostBlock(fu));
+    }
+
+    // "in 2h" / "in 18m" / "in 3d" — relative future time, mirroring
+    // shortLastSeen for consistency. Negative = overdue, returned as
+    // "overdue 5m" so a stuck cron is obvious in the panel.
+    function formatRelativeFuture(ms) {
+      if (!ms) return '—';
+      const delta = ms - Date.now();
+      const sign = delta < 0 ? 'overdue ' : 'in ';
+      const sec = Math.floor(Math.abs(delta) / 1000);
+      if (sec < 60)         return sign + sec + 's';
+      const min = Math.floor(sec / 60);
+      if (min < 60)         return sign + min + 'm';
+      const hr  = Math.floor(min / 60);
+      if (hr < 48)          return sign + hr + 'h';
+      const day = Math.floor(hr / 24);
+      return sign + day + 'd';
+    }
+
+    // Side-panel cron block — shows count plus per-job "name · in 18h · ok"
+    // lines so the panel reads as a real schedule, not just a count. Returns
+    // a multi-line string so it slots into the existing key/value row layout.
+    function formatCronSchedule(agent) {
+      const n = agent.cronJobs || 0;
+      if (n === 0) return '0';
+      const lines = (agent.cronSchedule || []).slice(0, 6).map(j => {
+        const next = formatRelativeFuture(j.nextRunAtMs);
+        const status = j.lastStatus ? ` · ${j.lastStatus}` : '';
+        const expr = j.expr ? ` (${j.expr})` : '';
+        return `  ${j.name}${expr}\n    next ${next}${status}`;
+      });
+      return `${n} job${n===1?'':'s'}\n${lines.join('\n')}`;
+    }
+
+    // Builds Local + LAN launch buttons per product. Local always uses
+    // 127.0.0.1; LAN uses the product's pinned lanHosts override or falls
+    // back to the page host + server-detected IPs.
+    //   - "Local" → http://localhost:PORT/PATH
+    //   - "LAN"   → product.lanHosts (if pinned) else page-host + server-detected IPs
+    //     (numbered "LAN 1" / "LAN 2" when more than one)
+    //   - "LAN unavailable" placeholder when no LAN host can be derived.
+    function buildProductLink(label, host, product) {
+      const path = product.path || '';
+      const url = `http://${host}:${product.port}${path}`;
+      const a = el('a', 'product-link');
+      a.href = url; a.target = '_blank'; a.rel = 'noreferrer';
+      a.appendChild(el('span', 'lbl', label));
+      a.appendChild(el('span', 'sub', `${host}:${product.port}${path}`));
+      return a;
+    }
+    // Documents-only products have no port — they're served by pixel-office
+    // itself under /docs/<id>/. Build Local + LAN links pointing at this
+    // server's host:port so the card has real, tappable URLs (matches the
+    // pattern of port-bound products).
+    function buildDocsLink(label, host, product) {
+      const port = window.location.port || '80';
+      const path = product.docsPath || `/docs/${product.id}/`;
+      const url = `http://${host}:${port}${path}`;
+      const a = el('a', 'product-link docs-only');
+      a.href = url; a.target = '_blank'; a.rel = 'noreferrer';
+      a.appendChild(el('span', 'lbl', label));
+      a.appendChild(el('span', 'sub', `${host}:${port}${path}`));
+      return a;
+    }
+    function buildDocsLinks(product) {
+      const out = [];
+      const pageHost = window.location.hostname;
+      const isPageLan = pageHost && pageHost !== 'localhost' && pageHost !== '127.0.0.1';
+      const serverLan = (window.__lanHosts || []).filter(Boolean);
+      out.push(buildDocsLink('Local', 'localhost', product));
+      const lanHosts = isPageLan
+        ? [pageHost, ...serverLan.filter(h => h !== pageHost)]
+        : serverLan;
+      lanHosts.forEach((host, idx) => {
+        const label = lanHosts.length > 1 ? `LAN ${idx + 1}` : 'LAN';
+        out.push(buildDocsLink(label, host, product));
+      });
+      return out;
+    }
+    // Reachability is probed CLIENT-SIDE (not server-side) because dev servers
+    // commonly run on the Windows host and WSL2 can't reach Windows-bound
+    // ports through mirrored networking — server probes give false negatives.
+    // The browser's perspective is the one that matters anyway: "is this URL
+    // openable from the device I'm looking at right now?"
+    //
+    // probeStatus[productId] holds 'pending' | 'live' | 'offline'.
+    // probesInFlight[productId] dedupes concurrent probes triggered by polls.
+    const probeStatus = new Map();
+    const probesInFlight = new Map();
+    const PROBE_TIMEOUT_MS = 2500;
+
+    async function probeOneUrl(url) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
+      try {
+        // no-cors lets the request go even when the target lacks CORS headers.
+        // A reachable server returns an opaque response; an unreachable one
+        // throws TypeError. The fetch result body is unreadable but we only
+        // care about reachability.
+        await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal });
+        return true;
+      } catch {
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function candidateProbeUrls(product) {
+      const path = product.path || '';
+      const hosts = new Set();
+      // The page's own origin first — works for the user's current network
+      // context (phone on LAN, laptop on WSL, etc.).
+      const pageHost = window.location.hostname;
+      if (pageHost) hosts.add(pageHost);
+      // localhost only useful when the page is also on localhost.
+      if (pageHost === 'localhost' || pageHost === '127.0.0.1') hosts.add('127.0.0.1');
+      // Product-pinned LAN hosts.
+      for (const h of (product.lanHosts || [])) hosts.add(h);
+      return [...hosts].map(h => `http://${h}:${product.port}${path}`);
+    }
+
+    function probeProduct(product) {
+      if (!product.port) return Promise.resolve(true);
+      if (probesInFlight.has(product.id)) return probesInFlight.get(product.id);
+      const urls = candidateProbeUrls(product);
+      const promise = Promise.all(urls.map(probeOneUrl)).then(results => {
+        const reachable = results.some(Boolean);
+        probeStatus.set(product.id, reachable ? 'live' : 'offline');
+        probesInFlight.delete(product.id);
+        // Re-render so the badge updates without waiting for the next poll.
+        if (lastState) render(lastState);
+        return reachable;
+      });
+      probesInFlight.set(product.id, promise);
+      return promise;
+    }
+
+    function ensureProbed(product) {
+      if (!product.port) return;
+      if (probeStatus.has(product.id)) return;
+      probeStatus.set(product.id, 'pending');
+      probeProduct(product);
+    }
+
+    // Re-probe every 60s so cards turn green again once a dev server comes
+    // back, and turn red once one falls over.
+    setInterval(() => {
+      if (!lastState) return;
+      for (const a of lastState.agents) {
+        for (const p of (a.products || [])) probeProduct(p);
+      }
+    }, 60_000);
+
+    // "live" downgrades to "offline" when the client-side probe can't reach
+    // any candidate URL. Other declared statuses (wip/planning/paused) pass
+    // through unchanged — those are intentional, not auto-detected.
+    function effectiveProductStatus(p) {
+      if (p.status !== 'live') return p.status;
+      ensureProbed(p);
+      const ps = probeStatus.get(p.id);
+      if (ps === 'offline') return 'offline';
+      if (ps === 'pending') return 'checking';
+      return 'live';
+    }
+    function renderProducts(agent) {
+      const products = agent.products || [];
+      if (products.length === 0) return document.createTextNode('—');
+      const pageHost = window.location.hostname;
+      const isPageLan = pageHost && pageHost !== 'localhost' && pageHost !== '127.0.0.1';
+      const serverLan = (window.__lanHosts || []).filter(Boolean);
+      const list = el('div', 'product-list');
+      products.forEach(p => {
+        const card = el('div', 'product-card');
+        const head = el('div', 'product-card-head');
+        head.appendChild(el('span', null, p.name));
+        const status = effectiveProductStatus(p);
+        head.appendChild(el('span', `product-status ${status}`, status));
+        card.appendChild(head);
+        if (p.description) card.appendChild(el('div', 'product-desc', p.description));
+        const links = el('div', 'product-links');
+        if (!p.port) {
+          buildDocsLinks(p).forEach(n => links.appendChild(n));
+        } else {
+          links.appendChild(buildProductLink('Local', 'localhost', p));
+          const lanHosts = (p.lanHosts && p.lanHosts.length > 0)
+            ? p.lanHosts
+            : (isPageLan
+                ? [pageHost, ...serverLan.filter(h => h !== pageHost)]
+                : serverLan);
+          if (lanHosts.length === 0) {
+            const placeholder = el('span', 'product-link unavailable');
+            placeholder.appendChild(el('span', 'lbl', 'LAN unavailable'));
+            links.appendChild(placeholder);
+          } else {
+            lanHosts.forEach((host, idx) => {
+              const label = lanHosts.length > 1 ? `LAN ${idx + 1}` : 'LAN';
+              links.appendChild(buildProductLink(label, host, p));
+            });
+          }
+          if (status === 'offline' && p.start) links.appendChild(buildStartButton(p));
+        }
+        card.appendChild(links);
+        list.appendChild(card);
+      });
+      return list;
+    }
+
+    // POSTs /api/pixel-office/product/:id/start. The button shows "Starting…"
+    // for ~6s (long enough for quarto/python to bind a port), then re-probes
+    // so the badge flips to live without waiting for the 60s auto-cycle.
+    function buildStartButton(product) {
+      const btn = el('button', 'product-link start-btn');
+      btn.type = 'button';
+      btn.appendChild(el('span', 'lbl', 'Start'));
+      btn.appendChild(el('span', 'sub', product.start.cmd));
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        btn.disabled = true;
+        btn.querySelector('.lbl').textContent = 'Starting…';
+        try {
+          const r = await fetch(`/api/pixel-office/product/${encodeURIComponent(product.id)}/start`, { method: 'POST' });
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok || !body.ok) {
+            btn.querySelector('.lbl').textContent = 'Start failed';
+            btn.querySelector('.sub').textContent = body.error || `HTTP ${r.status}`;
+            setTimeout(() => { btn.disabled = false; btn.querySelector('.lbl').textContent = 'Start'; btn.querySelector('.sub').textContent = product.start.cmd; }, 4000);
+            return;
+          }
+          // Give it a moment to bind the port, then probe a few times
+          // until reachable (or give up after ~12s).
+          let attempts = 0;
+          const tick = async () => {
+            attempts += 1;
+            // Force a fresh probe rather than reading cached pending state.
+            probeStatus.delete(product.id);
+            const reachable = await probeProduct(product);
+            if (reachable || attempts >= 6) {
+              btn.disabled = false;
+              btn.querySelector('.lbl').textContent = reachable ? 'Started' : 'Still down';
+              btn.querySelector('.sub').textContent = reachable ? body.logPath : `pid ${body.pid}; check ${body.logPath}`;
+              return;
+            }
+            setTimeout(tick, 2000);
+          };
+          setTimeout(tick, 2000);
+        } catch (e) {
+          btn.querySelector('.lbl').textContent = 'Start error';
+          btn.querySelector('.sub').textContent = e.message;
+          setTimeout(() => { btn.disabled = false; btn.querySelector('.lbl').textContent = 'Start'; btn.querySelector('.sub').textContent = product.start.cmd; }, 4000);
+        }
+      });
+      return btn;
+    }
+
+    // Lets the operator change an agent's primary model live. The dropdown
+    // POSTs to /api/pixel-office/agent/:id/model, which shells out to
+    // `openclaw config set agents.list.<idx>.model.primary <id>`. We block the
+    // refresh poll while a save is in flight so its 5-second tick can't
+    // overwrite the dropdown selection mid-save.
+    function buildModelPicker(agent) {
+      const wrap = el('span', 'model-picker');
+      const select = document.createElement('select');
+      select.className = 'model-select';
+      const opts = window.__availableModels || [];
+      const current = agent.modelPrimary || agent.modelDisplay || '';
+      const tail = current.split('/').pop();
+      let matched = false;
+      opts.forEach(m => {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.textContent = m.label;
+        if (m.id === current || m.id.split('/').pop() === tail) {
+          o.selected = true;
+          matched = true;
+        }
+        select.appendChild(o);
+      });
+      if (!matched && current) {
+        // Show whatever the agent is currently configured with even if it's not
+        // in the allowlist, so the operator isn't surprised by a default.
+        const o = document.createElement('option');
+        o.value = current;
+        o.textContent = `${current} (current)`;
+        o.disabled = true;
+        o.selected = true;
+        select.insertBefore(o, select.firstChild);
+      }
+      const status = el('span', 'model-status', '');
+      wrap.appendChild(select);
+      wrap.appendChild(status);
+      select.addEventListener('change', async () => {
+        const target = select.value;
+        select.disabled = true;
+        status.textContent = 'saving…';
+        status.className = 'model-status pending';
+        modelSaving = true;
+        try {
+          const res = await fetch(`/api/pixel-office/agent/${encodeURIComponent(agent.id)}/model`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: target }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || `HTTP ${res.status}`);
+          }
+          status.textContent = 'saved';
+          status.className = 'model-status ok';
+          await load();
+        } catch (err) {
+          status.textContent = `failed: ${err.message}`;
+          status.className = 'model-status err';
+        } finally {
+          modelSaving = false;
+          select.disabled = false;
+        }
+      });
+      return wrap;
+    }
+
+    function renderPanel(agent) {
+      const theme = getTheme(agent);
+      panelMeta.innerHTML = '';
+      const tokLine = agent.totalTokens
+        ? `${(agent.totalTokens).toLocaleString()} tok · ${agent.contextPct}% of ${(agent.contextWindow||0).toLocaleString()} · 🗄 ${agent.cachePct}%`
+        : '—';
+      const t = agent.tasks || {};
+      const tasksLine = (t.tracked || 0) === 0
+        ? '—'
+        : `${t.active||0} active · ${t.issues||0} issue${t.issues===1?'':'s'} · ${t.succeeded||0} ok · ${t.tracked||0} tracked`;
+      const memoryLine = agent.latestLog
+        ? `${agent.latestLog}${agent.latestLogAt ? ' · ' + new Date(agent.latestLogAt).toISOString().slice(0,10) : ''}`
+        : `${agent.memoryNotes || 0} note${agent.memoryNotes===1?'':'s'}`;
+      const sig = agent.signals || {};
+      const det = agent.signalDetail || {};
+      const activeSignals = SIGNAL_DEFS
+        .filter(d => sig[d.key])
+        .map(d => `${d.icon} ${(typeof d.label === 'function' ? d.label(det) : d.label).split(' — ')[0]}`)
+        .join(', ');
+      const fields = [
+        ['Agent', `${agent.emoji} ${agent.displayName}`],
+        ['Status', agent.statusLabel],
+        ['Signals', activeSignals || 'none'],
+        ['Model (primary)', buildModelPicker(agent)],
+        ['Model (active)', agent.modelDisplay || agent.modelPrimary || '—'],
+        ['Last seen', agent.lastSeen],
+        ['Latest session', agent.sessionKey || 'none'],
+        ['Tokens (this session)', tokLine],
+        ['Cost', buildCostBlock(agent.usage)],
+        ['Cron jobs', formatCronSchedule(agent)],
+        ['Products', renderProducts(agent)],
+        ['Tasks', tasksLine],
+        ['Latest memory', memoryLine],
+        ['Sessions tracked', String(agent.sessionCount)],
+        ['Room vibe', theme.mood],
+        ['Hint', agent.currentTask || 'No safe task snippet exposed yet.'],
+      ];
+      fields.forEach(([label, value]) => {
+        const row = el('div');
+        const strong = el('strong', null, label);
+        row.appendChild(strong);
+        // Multi-line values (e.g. cron schedule) need whitespace preserved so
+        // each "  name\n    next in 18h" line stays readable instead of
+        // collapsing into one paragraph.
+        if (value instanceof Node) {
+          row.appendChild(value);
+        } else if (typeof value === 'string' && value.includes('\n')) {
+          const block = el('span');
+          block.style.whiteSpace = 'pre-wrap';
+          block.style.fontFamily = 'ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+          block.style.fontSize = '11px';
+          block.textContent = value;
+          row.appendChild(block);
+        } else {
+          row.appendChild(document.createTextNode(value));
+        }
+        panelMeta.appendChild(row);
+      });
+      const link = el('a', 'button');
+      link.href = agent.openclawUrl;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.textContent = 'Open real control UI';
+      panelMeta.appendChild(link);
+    }
+
+    function createRoom(agent) {
+      const theme = getTheme(agent);
+      const room = el('button', `room ${agent.status}`);
+      room.type = 'button';
+      room.dataset.agent = agent.id;
+      applyTheme(room, theme);
+      room.addEventListener('click', () => { selectedAgentId = agent.id; renderPanel(agent); });
+
+      const header = el('div', 'room-header');
+      const left = el('div');
+      left.appendChild(el('div', 'agent-name', `${agent.emoji} ${agent.displayName}`));
+      left.appendChild(el('div', 'agent-role', roomRole(agent)));
+      header.appendChild(left);
+      header.appendChild(buildSignalStrip(agent));
+      header.appendChild(el('div', `badge ${agent.status}`, agent.statusLabel.toUpperCase()));
+      room.appendChild(header);
+
+      const cfg = agentConfig(agent.id);
+      const scene = el('div', 'scene');
+      scene.appendChild(el('div', `floor ${cfg.floor}`));
+      scene.appendChild(el('div', 'lamp'));
+      scene.appendChild(el('div', 'lamp-pool'));
+      if (cfg.propEnabled) {
+        const prop = el('div', `prop pos-${cfg.propPos}`);
+        prop.style.setProperty('--sprite-row', cfg.spriteRow);
+        addAmbient(prop, agent.id);
+        scene.appendChild(prop);
+      }
+      scene.appendChild(el('div', `decor ${cfg.decor}`));
+      scene.appendChild(el('div', 'door-left'));
+      scene.appendChild(el('div', 'door-right'));
+      scene.appendChild(el('div', `desk ${cfg.desk}`));
+      const monitor = el('div', `monitor ${agent.status}`);
+      monitor.style.setProperty('--sprite-row', cfg.spriteRow);
+      scene.appendChild(monitor);
+      if (cfg.secondaryMonitor) {
+        const monitor2 = el('div', `monitor secondary ${agent.status}`);
+        monitor2.style.setProperty('--sprite-row', cfg.secondaryMonitor.spriteRow);
+        scene.appendChild(monitor2);
+      }
+      scene.appendChild(el('div', 'chair'));
+      scene.appendChild(el('div', 'keyboard'));
+      scene.appendChild(el('div', 'mouse'));
+      scene.appendChild(el('div', `accent-cup ${cfg.cup}`));
+      cfg.deskPieces.forEach(name => {
+        const piece = buildDeskPiece(name);
+        if (piece) scene.appendChild(piece);
+      });
+      const sprite = el('div', `sprite ${spriteClass(agent)}`);
+      sprite.style.setProperty('--sprite-row', cfg.spriteRow);
+      sprite.dataset.agent = agent.id;
+      scene.appendChild(sprite);
+      scene.appendChild(el('div', `status-dot ${agent.status}`));
+      if (agent.status === 'away') scene.appendChild(el('div', 'zzz', 'z z z'));
+      scene.appendChild(buildStatsBoard(agent));
+      scene.appendChild(el('div', 'speech', clampSpeech(pickQuip(agent))));
+      room.appendChild(scene);
+
+      const footer = el('div', 'room-footer');
+      footer.appendChild(el('span', null, `seen ${agent.lastSeen}`));
+      const ctxText = formatContextBar(agent);
+      if (ctxText) {
+        const bar = el('span', `ctxbar ${ctxBand(agent.contextPct)}`);
+        if (agent.cronJobs > 0) {
+          const chip = el('span', 'cron-chip', `⏰ ${agent.cronJobs}`);
+          chip.title = `${agent.cronJobs} scheduled cron job${agent.cronJobs === 1 ? '' : 's'}`;
+          bar.appendChild(chip);
+        }
+        const products = agent.products || [];
+        if (products.length > 0) {
+          const chip = el('span', 'product-chip', `🚀 ${products.length}`);
+          chip.title = `${products.length} product${products.length === 1 ? '' : 's'}: ${products.map(p => p.name).join(', ')}`;
+          bar.appendChild(chip);
+        }
+        bar.appendChild(el('span', null, ctxText));
+        footer.appendChild(bar);
+      }
+      footer.appendChild(el('span', 'mood', theme.mood));
+      room.appendChild(footer);
+      return room;
+    }
+
+    // Phase 3 — in-room pacing.
+    // Each non-away agent gets a Walker that schedules random short walks within
+    // the room. Walkers persist across status polls; render() now diffs by agent
+    // id set rather than wiping the DOM, so positions and motion stay continuous.
+    const SPRITE_DEFAULT_LEFT = 56;        // matches .sprite { left:56px }  — IDLE seat (chair pulled back)
+    const WORK_SEAT_X         = 124;       // sprite-center over keyboard center; chair tucks under desk
+    const SPRITE_VISUAL_HALF  = 40;        // 32px sprite × 2.5 / 2
+    const WALK_SPEED_PX_S     = 60;        // CSS pixels per second along left axis
+
+    const STATE_CLASSES   = ['active', 'idle', 'sip', 'away', 'walking'];
+    const POSTURE_CLASSES = ['sitting'];
+    const SEAT_X_TOLERANCE = 14;          // sprite is "at seat" within ±14px of either seat position
+    const EXIT_CHANCE     = 0.20;         // per-walk probability of door transition (when neighbor exists)
+    const EXIT_FADE_MS    = 450;          // duration of exit fade-out
+    const ENTER_FADE_MS   = 400;          // duration of entry fade-in
+    // Design-phase lock: pin every character at the work seat in the working
+    // pose so we can iterate on the seated composition without movement noise.
+    // Flip back to false to restore status-driven behavior.
+    const DESIGN_FREEZE_AT_DESK = false;
+
+    // Phase 4 — adjacency. Computed at render time and on resize. Maps each
+    // agent.id -> { left: agentId|null, right: agentId|null } based on the
+    // visible row layout (rooms with similar getBoundingClientRect().top).
+    let adjacencyMap = new Map();
+    let adjacencyTimer = null;
+
+    function computeAdjacency() {
+      adjacencyMap = new Map();
+      const rooms = Array.from(officeEl.querySelectorAll('.room'));
+      if (!rooms.length) return;
+      const positioned = rooms.map(r => ({
+        id: r.dataset.agent,
+        rect: r.getBoundingClientRect(),
+      })).filter(p => p.id);
+      positioned.sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
+      const rows = [];
+      positioned.forEach(p => {
+        const row = rows.find(r => Math.abs(r[0].rect.top - p.rect.top) < 40);
+        if (row) row.push(p); else rows.push([p]);
+      });
+      rows.forEach(row => {
+        row.sort((a, b) => a.rect.left - b.rect.left);
+        row.forEach((p, i) => {
+          adjacencyMap.set(p.id, {
+            left:  i > 0 ? row[i - 1].id : null,
+            right: i < row.length - 1 ? row[i + 1].id : null,
+          });
+        });
+      });
+    }
+
+    window.addEventListener('resize', () => {
+      clearTimeout(adjacencyTimer);
+      adjacencyTimer = setTimeout(computeAdjacency, 200);
+    });
+
+    function findRoom(agentId) {
+      return officeEl.querySelector(`.room[data-agent="${agentId}"]`);
+    }
+
+    function pickNeighbor(currentRoom) {
+      if (!currentRoom) return null;
+      const id = currentRoom.dataset.agent;
+      const adj = adjacencyMap.get(id);
+      if (!adj) return null;
+      const dirs = [];
+      if (adj.left)  dirs.push({ dir: 'left',  id: adj.left });
+      if (adj.right) dirs.push({ dir: 'right', id: adj.right });
+      if (!dirs.length) return null;
+      const choice = dirs[Math.floor(Math.random() * dirs.length)];
+      const room = findRoom(choice.id);
+      return room ? { dir: choice.dir, room } : null;
+    }
+
+    class Walker {
+      constructor(sprite, scene, agent, room) {
+        this.sprite = sprite;
+        this.scene  = scene;
+        this.room   = room;     // Phase 4: current room (changes after migration)
+        this.agent  = agent;
+        this.busy   = false;
+        this.timer  = null;
+        this.raf    = null;
+        this.alive  = true;
+        // Phase 5: an active agent starts at the WORK seat so the chair tucks
+        // under the desk on first paint. Idle/sip/away start at the IDLE seat.
+        // DESIGN_FREEZE_AT_DESK overrides this: every character locks to WORK_SEAT.
+        if (DESIGN_FREEZE_AT_DESK || agent.status === 'active') {
+          sprite.style.left = WORK_SEAT_X + 'px';
+        }
+        this.applyPose();
+        if (!DESIGN_FREEZE_AT_DESK) this.scheduleNext(true);
+      }
+      isHome() {
+        return this.room && this.room.dataset.agent === this.agent.id;
+      }
+      setStatus(status) {
+        const prev = this.agent.status;
+        this.agent = { ...this.agent, status };
+        if (DESIGN_FREEZE_AT_DESK) {
+          // Stay frozen at the work seat regardless of incoming status.
+          this.applyPose();
+          return;
+        }
+        if (status === prev) return;
+        // Only the home walker may toggle this room's chair — otherwise a
+        // visitor's status flip would tuck the host's chair under the desk.
+        const chair = this.scene && this.scene.querySelector('.chair');
+        if (chair && this.isHome()) chair.classList.toggle('working', status === 'active');
+        if (this.busy) return; // an in-flight walk will resolve in finish()
+        if (status === 'away') { this.applyPose(); return; }
+        // Visitors must never aim for the host's seats. pickAndWalk will route
+        // them home on the next tick.
+        if (!this.isHome()) { this.applyPose(); return; }
+        const target = status === 'active' ? WORK_SEAT_X : SPRITE_DEFAULT_LEFT;
+        if (Math.abs(this.currentX() - target) > SEAT_X_TOLERANCE) {
+          if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+          this.walkTo(target);
+        } else {
+          this.applyPose();
+        }
+      }
+      // Pose = state class + posture class for the CURRENT settled position.
+      // Sitting is position-driven: any seat (idle OR work) gives .sitting.
+      // Chair "working" tuck is status-driven: .chair.working iff status=active.
+      applyPose() {
+        STATE_CLASSES.forEach(c => this.sprite.classList.remove(c));
+        POSTURE_CLASSES.forEach(c => this.sprite.classList.remove(c));
+        const chair = this.scene && this.scene.querySelector('.chair');
+        if (DESIGN_FREEZE_AT_DESK) {
+          this.sprite.classList.add('active', 'sitting');
+          if (chair) chair.classList.add('working');
+          this.sprite.classList.remove('facing-left');
+          return;
+        }
+        const x = this.currentX();
+        const atSeat = Math.abs(x - SPRITE_DEFAULT_LEFT) < SEAT_X_TOLERANCE
+                    || Math.abs(x - WORK_SEAT_X)         < SEAT_X_TOLERANCE;
+        let stateClass;
+        if (this.agent.status === 'active') {
+          stateClass = 'active';
+        } else if (this.agent.status === 'away') {
+          stateClass = 'away';
+        } else {
+          const seed = (this.agent.id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+          const minute = Math.floor(Date.now() / 60000);
+          stateClass = ((seed + minute) % 3 === 0) ? 'sip' : 'idle';
+        }
+        this.sprite.classList.add(stateClass);
+        // Visitors are not allowed to sit on or use the host's seats — only
+        // the home walker may pose .sitting and toggle the chair tuck.
+        if (atSeat && this.isHome()) this.sprite.classList.add('sitting');
+        if (chair && this.isHome()) chair.classList.toggle('working', this.agent.status === 'active');
+        if (!this.busy) this.sprite.classList.remove('facing-left');
+      }
+      bounds() {
+        const w = this.scene.clientWidth || 280;
+        return { minX: SPRITE_VISUAL_HALF - 16, maxX: Math.max(SPRITE_DEFAULT_LEFT, w - SPRITE_VISUAL_HALF - 16) };
+      }
+      scheduleNext(initial = false) {
+        if (!this.alive) return;
+        const dwell = initial
+          ? 2000 + Math.random() * 5000
+          : 8000 + Math.random() * 16000;
+        this.timer = setTimeout(() => this.pickAndWalk(), dwell);
+      }
+      // Pick the door direction that leads back to the walker's own room,
+      // chosen by shortest path along the wrap-around document order. Returns
+      // null if the walker is already home or if no neighbor exists.
+      findHomeDir() {
+        if (this.isHome()) return null;
+        const rooms = Array.from(officeEl.querySelectorAll('.room'));
+        const homeIdx = rooms.findIndex(r => r.dataset.agent === this.agent.id);
+        const curIdx  = rooms.findIndex(r => r === this.room);
+        if (homeIdx < 0 || curIdx < 0) return null;
+        const adj = adjacencyMap.get(this.room.dataset.agent) || {};
+        const N = rooms.length;
+        const cyclicDist = (a, b) => Math.min((a - b + N) % N, (b - a + N) % N);
+        const candidates = [];
+        if (adj.left) {
+          const idx = rooms.findIndex(r => r.dataset.agent === adj.left);
+          if (idx >= 0) candidates.push({ dir: 'left',  id: adj.left,  d: cyclicDist(idx, homeIdx) });
+        }
+        if (adj.right) {
+          const idx = rooms.findIndex(r => r.dataset.agent === adj.right);
+          if (idx >= 0) candidates.push({ dir: 'right', id: adj.right, d: cyclicDist(idx, homeIdx) });
+        }
+        if (!candidates.length) return null;
+        candidates.sort((a, b) => a.d - b.d);
+        const room = findRoom(candidates[0].id);
+        return room ? { dir: candidates[0].dir, room } : null;
+      }
+      pickAndWalk() {
+        if (!this.alive || this.agent.status === 'away') {
+          this.scheduleNext();
+          return;
+        }
+        // Visiting another agent's room — head home immediately on the next
+        // action. Visitors are never allowed to settle, sit, or use the host's
+        // chair/PC, so we don't pick a wander target here.
+        if (!this.isHome()) {
+          const home = this.findHomeDir();
+          if (home) return this.walkToDoorAndExit(home.dir, home.room);
+          // No path home (e.g. lost adjacency mid-resize). Stay put and retry.
+          this.scheduleNext();
+          return;
+        }
+        // Phase 5: active = sit and work. Don't wander, don't visit. If we
+        // somehow drifted off the work seat, walk back to it.
+        if (this.agent.status === 'active') {
+          if (Math.abs(this.currentX() - WORK_SEAT_X) > SEAT_X_TOLERANCE) {
+            this.walkTo(WORK_SEAT_X);
+            return;
+          }
+          this.scheduleNext();
+          return;
+        }
+        // Idle/sip: chance to visit a neighbor, otherwise wander or settle
+        // back at the idle (relaxed) seat.
+        if (Math.random() < EXIT_CHANCE) {
+          const neighbor = pickNeighbor(this.room);
+          if (neighbor) return this.walkToDoorAndExit(neighbor.dir, neighbor.room);
+        }
+        const { minX, maxX } = this.bounds();
+        const target = Math.random() < 0.35
+          ? SPRITE_DEFAULT_LEFT
+          : minX + Math.random() * (maxX - minX);
+        this.walkTo(target);
+      }
+      currentX() {
+        const inline = this.sprite.style.left;
+        if (inline) return parseFloat(inline);
+        return SPRITE_DEFAULT_LEFT;
+      }
+      walkTo(targetX, onComplete = null) {
+        const startX = this.currentX();
+        const dx = targetX - startX;
+        if (Math.abs(dx) < 6) {
+          if (onComplete) onComplete();
+          else { this.applyPose(); this.scheduleNext(); }
+          return;
+        }
+        this.busy = true;
+        STATE_CLASSES.forEach(c => this.sprite.classList.remove(c));
+        POSTURE_CLASSES.forEach(c => this.sprite.classList.remove(c));
+        this.sprite.classList.add('walking');
+        this.sprite.classList.toggle('facing-left', dx < 0);
+        const duration = Math.abs(dx) / WALK_SPEED_PX_S * 1000;
+        const startT = performance.now();
+        const step = (now) => {
+          if (!this.alive) return;
+          const t = Math.min(1, (now - startT) / duration);
+          this.sprite.style.left = (startX + dx * t) + 'px';
+          if (t < 1) this.raf = requestAnimationFrame(step);
+          else this.finish(onComplete);
+        };
+        this.raf = requestAnimationFrame(step);
+      }
+      finish(onComplete) {
+        this.busy = false;
+        if (onComplete) {
+          onComplete();
+          return;
+        }
+        // If status flipped to active mid-walk and we ended somewhere other
+        // than the work seat, re-route to it — but only when home. A visiting
+        // walker must never be steered onto another agent's chair.
+        if (this.agent.status === 'active'
+            && this.isHome()
+            && Math.abs(this.currentX() - WORK_SEAT_X) > SEAT_X_TOLERANCE) {
+          this.walkTo(WORK_SEAT_X);
+          return;
+        }
+        this.applyPose();
+        this.scheduleNext();
+      }
+      // Phase 4: walk to the side door, then trigger the cross-room transition.
+      walkToDoorAndExit(dir, neighborRoom) {
+        const { minX, maxX } = this.bounds();
+        const targetX = dir === 'right' ? maxX : minX;
+        this.walkTo(targetX, () => this.beginExitTransition(dir, neighborRoom));
+      }
+      beginExitTransition(dir, neighborRoom) {
+        if (!this.alive) return;
+        this.busy = true;
+        // Sink behind the door visually + slide a touch further into it.
+        this.sprite.style.zIndex = '0';
+        this.sprite.classList.add('walking');
+        this.sprite.classList.toggle('facing-left', dir === 'left');
+        const slide = (dir === 'right' ? 24 : -24);
+        this.sprite.style.transition = `opacity ${EXIT_FADE_MS}ms ease-in, left ${EXIT_FADE_MS}ms ease-in`;
+        this.sprite.style.left = (this.currentX() + slide) + 'px';
+        this.sprite.style.opacity = '0';
+        this.timer = setTimeout(() => this.completeMigration(dir, neighborRoom), EXIT_FADE_MS + 30);
+      }
+      completeMigration(dir, neighborRoom) {
+        if (!this.alive) return;
+        const newScene = neighborRoom.querySelector('.scene');
+        if (!newScene) {
+          // Neighbor vanished mid-transition (rare). Bail back to current room.
+          this.sprite.style.transition = '';
+          this.sprite.style.opacity = '1';
+          this.sprite.style.zIndex = '';
+          this.busy = false;
+          this.applyPose();
+          this.scheduleNext();
+          return;
+        }
+        newScene.appendChild(this.sprite);
+        this.scene = newScene;
+        this.room  = neighborRoom;
+        // Sprite enters from the OPPOSITE door (came out of right → enters left).
+        const enterDir = dir === 'right' ? 'left' : 'right';
+        const { minX, maxX } = this.bounds();
+        const startX = enterDir === 'left' ? minX : maxX;
+        this.sprite.style.transition = '';
+        this.sprite.style.left = startX + 'px';
+        this.sprite.classList.toggle('facing-left', enterDir === 'right');
+        // Fade in next frame.
+        requestAnimationFrame(() => {
+          this.sprite.style.transition = `opacity ${ENTER_FADE_MS}ms ease-out`;
+          this.sprite.style.opacity = '1';
+        });
+        this.timer = setTimeout(() => {
+          if (!this.alive) return;
+          this.sprite.style.transition = '';
+          this.sprite.style.zIndex = '';
+          this.busy = false;
+          // Walk a bit further into the new room before settling.
+          const offset = enterDir === 'left' ? 80 : -80;
+          this.walkTo(this.currentX() + offset);
+        }, ENTER_FADE_MS + 30);
+      }
+      destroy() {
+        this.alive = false;
+        if (this.timer) clearTimeout(this.timer);
+        if (this.raf) cancelAnimationFrame(this.raf);
+        this.sprite.classList.remove('walking');
+        this.sprite.style.opacity = '';
+        this.sprite.style.transition = '';
+        this.sprite.style.zIndex = '';
+      }
+    }
+
+    const walkers = new Map();   // agentId -> Walker
+    let lastAgentIds = '';
+    let selectedAgentId = null;
+    // True while a model dropdown POST is in flight — the 5s poll is skipped so
+    // the user's pending selection isn't blown away by an in-place re-render.
+    let modelSaving = false;
+
+    function attachWalker(room, agent) {
+      const sprite = room.querySelector('.sprite');
+      const scene  = room.querySelector('.scene');
+      if (!sprite || !scene) return;
+      // Away agents also get a walker — it just keeps them parked at the desk
+      // in the slumped pose. This way the walker, not updateRoomInPlace, owns
+      // every state class on the sprite, avoiding fights between the two.
+      if (agent.status === 'away' && sprite.style.left) sprite.style.left = '';
+      walkers.set(agent.id, new Walker(sprite, scene, agent, room));
+    }
+
+    function updateRoomInPlace(agent) {
+      const room = officeEl.querySelector(`.room[data-agent="${agent.id}"]`);
+      if (!room) return;
+      room.classList.remove('active', 'idle', 'away');
+      room.classList.add(agent.status);
+      const badge = room.querySelector('.badge');
+      if (badge) {
+        badge.className = `badge ${agent.status}`;
+        badge.textContent = agent.statusLabel.toUpperCase();
+      }
+      const dot = room.querySelector('.status-dot');
+      if (dot) dot.className = `status-dot ${agent.status}`;
+      const monitor = room.querySelector('.monitor');
+      if (monitor) {
+        monitor.classList.remove('active', 'idle', 'away');
+        monitor.classList.add(agent.status);
+      }
+      let zzz = room.querySelector('.zzz');
+      if (agent.status === 'away' && !zzz) {
+        const sceneEl = room.querySelector('.scene');
+        if (sceneEl) sceneEl.appendChild(el('div', 'zzz', 'z z z'));
+      } else if (agent.status !== 'away' && zzz) {
+        zzz.remove();
+      }
+      // Hand the new status off to the walker, which re-poses the sprite
+      // (sitting at desk vs standing elsewhere vs slumped on desk for away).
+      const walker = walkers.get(agent.id);
+      if (walker) {
+        walker.setStatus(agent.status);
+        // If the agent flipped to away, snap them back to the desk in their
+        // CURRENT room (which may be a neighbor's room if they were visiting).
+        if (agent.status === 'away') {
+          walker.sprite.style.left = '';
+          walker.applyPose();
+        }
+      } else {
+        attachWalker(room, agent);
+      }
+    }
+
+    // Top rail card — same content as the side-panel card but bigger and
+    // headlining the page. One per product, owner-byline up top.
+    function buildRailCard(product, owner) {
+      const card = el('div', 'rail-card');
+      const head = el('div', 'rail-card-head');
+      const titleBox = el('div');
+      const ownerLine = owner
+        ? `${owner.emoji} ${owner.displayName}${owner.role ? ' · ' + owner.role : ''}`
+        : product.agentId;
+      titleBox.appendChild(el('div', 'rail-owner', ownerLine));
+      titleBox.appendChild(el('div', 'rail-name', product.name));
+      head.appendChild(titleBox);
+      const railStatus = effectiveProductStatus(product);
+      head.appendChild(el('span', `rail-status ${railStatus}`, railStatus));
+      card.appendChild(head);
+      if (product.description) card.appendChild(el('div', 'rail-desc', product.description));
+      if (product.tags && product.tags.length > 0) {
+        const tagBox = el('div', 'rail-tags');
+        product.tags.forEach(t => tagBox.appendChild(el('span', 'rail-tag', t)));
+        card.appendChild(tagBox);
+      }
+      // Reuse the same Local/LAN button builder as the side panel so the URL
+      // logic stays in one place.
+      const links = el('div', 'rail-links');
+      if (!product.port) {
+        buildDocsLinks(product).forEach(n => links.appendChild(n));
+      } else {
+        const pageHost = window.location.hostname;
+        const isPageLan = pageHost && pageHost !== 'localhost' && pageHost !== '127.0.0.1';
+        const serverLan = (window.__lanHosts || []).filter(Boolean);
+        links.appendChild(buildProductLink('Local', 'localhost', product));
+        const lanHosts = (product.lanHosts && product.lanHosts.length > 0)
+          ? product.lanHosts
+          : (isPageLan
+              ? [pageHost, ...serverLan.filter(h => h !== pageHost)]
+              : serverLan);
+        if (lanHosts.length === 0) {
+          const placeholder = el('span', 'product-link unavailable');
+          placeholder.appendChild(el('span', 'lbl', 'LAN unavailable'));
+          links.appendChild(placeholder);
+        } else {
+          lanHosts.forEach((host, idx) => {
+            const label = lanHosts.length > 1 ? `LAN ${idx + 1}` : 'LAN';
+            links.appendChild(buildProductLink(label, host, product));
+          });
+        }
+        if (railStatus === 'offline' && product.start) links.appendChild(buildStartButton(product));
+      }
+      card.appendChild(links);
+      return card;
+    }
+
+    function renderProductsRail(state) {
+      const owners = {};
+      for (const a of state.agents) owners[a.id] = a;
+      const products = [];
+      for (const a of state.agents) for (const p of (a.products || [])) products.push(p);
+      if (products.length === 0) { railEl.hidden = true; return; }
+      railEl.hidden = false;
+      railGrid.innerHTML = '';
+      // Header LAN-host hint shows "LAN: x.x.x.x" so phones know where to point.
+      const lans = (state.lanHosts || []).slice();
+      railLanEl.textContent = lans.length > 0 ? `LAN: ${lans.join(', ')}` : 'No LAN host detected';
+      products.forEach(p => railGrid.appendChild(buildRailCard(p, owners[p.agentId])));
+    }
+
+    function render(state) {
+      lastState = state;
+      openclawLink.href = state.openclawUrl;
+      window.__lanHosts = state.lanHosts || [];
+      window.__availableModels = state.availableModels || [];
+      window.__subscriptionProviders = state.subscriptionProviders || [];
+      window.__billingModes = state.billingModes || {};
+      renderProductsRail(state);
+      renderFleetCost(state);
+      const ids = state.agents.map(a => a.id).join(',');
+      if (ids !== lastAgentIds) {
+        // Agent set changed — full rebuild.
+        walkers.forEach(w => w.destroy());
+        walkers.clear();
+        officeEl.innerHTML = '';
+        state.agents.forEach(agent => {
+          const room = createRoom(agent);
+          officeEl.appendChild(room);
+          attachWalker(room, agent);
+        });
+        lastAgentIds = ids;
+        // Phase 4: recompute room adjacency so walkers know who's next door.
+        computeAdjacency();
+      } else {
+        state.agents.forEach(updateRoomInPlace);
+      }
+      const pinned = selectedAgentId
+        ? state.agents.find(a => a.id === selectedAgentId)
+        : null;
+      const target = pinned || state.agents[0];
+      if (target) renderPanel(target);
+    }
+
+    async function load() {
+      refreshBtn.disabled = true;
+      try {
+        const res = await fetch('/api/pixel-office/state', { cache:'no-store' });
+        const state = await res.json();
+        render(state);
+      } catch {
+        officeEl.innerHTML = '<div class="empty">Failed to load office state.</div>';
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    refreshBtn.addEventListener('click', load);
+    // Hard reload: bypasses HTML/JS cache. Necessary in installed PWAs on iOS
+    // where there's no Safari address bar to pull-to-refresh from.
+    function hardReload() {
+      // Append a cache-buster to defeat any intermediate cache (HTTP cache is
+      // already no-store for HTML/JS, but service workers / proxies can lie).
+      const u = new URL(window.location.href);
+      u.searchParams.set('_r', Date.now().toString(36));
+      window.location.replace(u.toString());
+    }
+    document.getElementById('reload-btn').addEventListener('click', hardReload);
+    // Long-press anywhere on the Refresh button (>=600ms) = hard reload.
+    let pressTimer = null;
+    const startPress = () => { pressTimer = setTimeout(hardReload, 600); };
+    const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+    refreshBtn.addEventListener('touchstart', startPress, { passive: true });
+    refreshBtn.addEventListener('touchend', cancelPress);
+    refreshBtn.addEventListener('touchcancel', cancelPress);
+    refreshBtn.addEventListener('mousedown', startPress);
+    refreshBtn.addEventListener('mouseup', cancelPress);
+    refreshBtn.addEventListener('mouseleave', cancelPress);
+    load();
+    setInterval(() => { if (!modelSaving) load(); }, 5000);
+
+    // ---- Office dog ----
+    // A roaming pixel mascot that lives along the bottom of the office grid.
+    // It walks to a random x, then rolls a die for what to do: keep walking,
+    // sleep for a while, pee (and leave a fading puddle), or sit and stare at
+    // the screen. State changes are class flips; CSS does the actual posing.
+    // Office dog — lives inside one room's scene at a time, walks the floor,
+    // and periodically migrates to a random other room with a quick fade so it
+    // feels like a real office pet making the rounds. Same state palette as
+    // before (walk / sleep / pee / stare) plus a 'visit' action that triggers
+    // a room hop.
+    const DOG_STATES = ['walking','running','sleeping','peeing','staring'];
+    const DOG_X_MIN = 14;        // keep clear of left wall
+    const DOG_X_MAX = 320;       // 365 scene width − dog width − margin
+    const DOG_FADE_MS = 380;
+    class OfficeDog {
+      constructor() {
+        this.el = el('div', 'dog');
+        const parts = [
+          'tail-base','tail-mid','tail-curl','tail-tip',
+          'body','belly','chest','fluff-l','fluff-r',
+          'spot s1','spot s2',
+          'head','cheek','muzzle','nose','mouth','tongue',
+          'eye','eye r','eye-shine','eye-shine r',
+          'ear','ear r','ear-inner','ear-inner r',
+          'collar','tag',
+          'leg fl','leg fr','leg bl','leg br',
+          'paw fl','paw fr','paw bl','paw br',
+          'speed-1','speed-2',
+          'puddle','zz',
+        ];
+        parts.forEach(cls => {
+          const d = el('div', `dpart ${cls}`);
+          if (cls === 'zz') d.textContent = 'z';
+          this.el.appendChild(d);
+        });
+        this.scene = null;
+        this.x = DOG_X_MIN + 20;
+        this.facing = 'right';
+        this.el.style.left = this.x + 'px';
+        this.timer = null;
+        this.tryAttach();
+      }
+      // Find a scene to live in. If our current scene is gone (full rebuild
+      // wiped the office), pick a fresh random one. Returns true on success.
+      tryAttach() {
+        if (this.scene && this.scene.isConnected) return true;
+        const scenes = document.querySelectorAll('#office .scene');
+        if (scenes.length === 0) {
+          this.timer = setTimeout(() => this.tryAttach(), 500);
+          return false;
+        }
+        const target = scenes[Math.floor(Math.random() * scenes.length)];
+        this.placeIn(target);
+        this.scheduleNext(800);
+        return true;
+      }
+      placeIn(scene) {
+        this.scene = scene;
+        scene.appendChild(this.el);
+        this.el.style.opacity = '1';
+      }
+      setState(state) {
+        DOG_STATES.forEach(s => this.el.classList.remove(s));
+        this.el.classList.add(state);
+      }
+      walkTo(targetX, opts = {}) {
+        return new Promise(resolve => {
+          const tx = Math.max(DOG_X_MIN, Math.min(DOG_X_MAX, targetX));
+          const dx = tx - this.x;
+          if (Math.abs(dx) < 4) { resolve(); return; }
+          this.facing = dx < 0 ? 'left' : 'right';
+          this.el.classList.toggle('facing-left', this.facing === 'left');
+          // 'walking' = stroll (35 px/s), 'running' = sprint (90 px/s).
+          const running = !!opts.run;
+          this.setState(running ? 'running' : 'walking');
+          const speed = running ? 90 : 35;
+          const duration = Math.abs(dx) / speed * 1000;
+          this.el.style.transition = `left ${duration}ms linear`;
+          this.el.style.left = tx + 'px';
+          this.x = tx;
+          setTimeout(() => {
+            this.el.style.transition = 'left 0s linear';
+            // Drop the walking/running class so legs and tail stop animating
+            // while the dog stands still between actions.
+            DOG_STATES.forEach(s => this.el.classList.remove(s));
+            resolve();
+          }, duration + 30);
+        });
+      }
+      // Migrate: walk to a door, fade out, fade into the ADJACENT room on
+      // that side. No teleporting across the office — the dog only ever
+      // visits its current room's left or right neighbor (uses the same
+      // adjacencyMap the agent walkers use). If neither neighbor exists,
+      // just wander in place.
+      async migrate() {
+        // Document-order adjacency with wrap-around. Going "right" steps to
+        // the next room in the office grid; from the LAST room it wraps back
+        // to the FIRST. Going "left" steps backward; from the first room it
+        // wraps to the last. This works the same on desktop multi-column and
+        // phone single-column layouts.
+        const rooms = Array.from(officeEl.querySelectorAll('.room'));
+        if (rooms.length < 2) {
+          const target = DOG_X_MIN + Math.round(Math.random() * (DOG_X_MAX - DOG_X_MIN));
+          await this.walkTo(target);
+          this.scheduleNext(800 + Math.random() * 1500);
+          return;
+        }
+        const room = this.scene && this.scene.closest('.room');
+        let idx = rooms.indexOf(room);
+        if (idx < 0) idx = 0;
+        const exitDir = Math.random() < 0.5 ? 'left' : 'right';
+        const nextIdx = exitDir === 'right'
+          ? (idx + 1) % rooms.length
+          : (idx - 1 + rooms.length) % rooms.length;
+        const next = rooms[nextIdx].querySelector('.scene');
+        if (!next) { this.scheduleNext(1500); return; }
+        const exitX = exitDir === 'left' ? DOG_X_MIN : DOG_X_MAX;
+        await this.walkTo(exitX);
+        this.el.style.transition = `opacity ${DOG_FADE_MS}ms ease-in`;
+        this.el.style.opacity = '0';
+        await new Promise(r => setTimeout(r, DOG_FADE_MS + 30));
+        // Re-enter from the opposite door of the new room.
+        const enterDir = exitDir === 'left' ? 'right' : 'left';
+        const enterX   = enterDir === 'left' ? DOG_X_MIN : DOG_X_MAX;
+        this.placeIn(next);
+        this.el.style.transition = 'left 0s linear';
+        this.el.style.left = enterX + 'px';
+        this.x = enterX;
+        this.facing = enterDir === 'left' ? 'right' : 'left';
+        this.el.classList.toggle('facing-left', this.facing === 'left');
+        this.setState('walking');
+        // Fade in next frame.
+        requestAnimationFrame(() => {
+          this.el.style.transition = `opacity ${DOG_FADE_MS}ms ease-out`;
+          this.el.style.opacity = '1';
+        });
+        await new Promise(r => setTimeout(r, DOG_FADE_MS));
+        // Stroll a bit into the new room.
+        const settle = enterDir === 'left'
+          ? this.x + 60 + Math.random() * 80
+          : this.x - 60 - Math.random() * 80;
+        await this.walkTo(Math.round(settle));
+        this.scheduleNext(600 + Math.random() * 1500);
+      }
+      async pickAction() {
+        if (!this.tryAttach()) return;
+        // Action distribution for the roaming office dog:
+        //   wander  50%   stroll to a random x in this room
+        //   run    12.5%  sprint to a random x (faster legs + speed lines)
+        //   migrate 15%   walk-fade-walk to the next/prev room (wraps)
+        //   stare   10%   sit, face camera, pant, tail thumps
+        //   sleep   7.5%  curl on floor with Z's
+        //   pee     5%    lift back leg, leave a fading puddle
+        const r = Math.random();
+        if (r < 0.500) {
+          const target = DOG_X_MIN + Math.round(Math.random() * (DOG_X_MAX - DOG_X_MIN));
+          await this.walkTo(target);
+          this.scheduleNext(400 + Math.random() * 1500);
+        } else if (r < 0.625) {
+          const target = DOG_X_MIN + Math.round(Math.random() * (DOG_X_MAX - DOG_X_MIN));
+          await this.walkTo(target, { run: true });
+          this.scheduleNext(300 + Math.random() * 1000);
+        } else if (r < 0.775) {
+          await this.migrate();
+        } else if (r < 0.875) {
+          this.setState('staring');
+          this.scheduleNext(4000 + Math.random() * 4000);
+        } else if (r < 0.950) {
+          this.setState('sleeping');
+          this.scheduleNext(6000 + Math.random() * 8000);
+        } else {
+          this.setState('peeing');
+          this.scheduleNext(1700);
+        }
+      }
+      scheduleNext(delay) {
+        clearTimeout(this.timer);
+        this.timer = setTimeout(() => this.pickAction(), delay);
+      }
+    }
+    const officeDog = new OfficeDog();
+    window.dog = officeDog; // dev handle: dog.setState('staring'), dog.migrate()
+
+    // Phase 2 dev helpers — manual walk-in-place toggle from devtools.
+    //   walk('main')         — walk facing right
+    //   walk('main','left')  — walk facing left
+    //   walk('main', null)   — stop walking
+    //   walk()               — walk all sprites (random direction per sprite)
+    window.walk = function (agentId, dir = 'right') {
+      const sel = agentId ? `.sprite[data-agent="${agentId}"]` : '.sprite';
+      document.querySelectorAll(sel).forEach((s) => {
+        const direction = dir === 'random' ? (Math.random() < 0.5 ? 'left' : 'right') : dir;
+        s.classList.toggle('walking', direction != null);
+        s.classList.toggle('facing-left', direction === 'left');
+      });
+    };
+  </script>
+</body>
+</html>

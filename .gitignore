@@ -1,0 +1,18 @@
+node_modules/
+.env
+.env.*
+*.log
+
+# Generated profile pictures (run `npm run build:profiles` to regenerate)
+public/profile-pics/
+
+# Local product + pricing config (personal to each deployment)
+products.json
+prices.json
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

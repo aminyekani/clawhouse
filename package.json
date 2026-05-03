@@ -1,0 +1,26 @@
+{
+  "name": "pixel-office",
+  "version": "0.1.0",
+  "description": "Pixel-art fleet status board for OpenClaw agents",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start":           "node server.js",
+    "dev":             "PIXEL_OFFICE_PORT=18890 node server.js",
+    "demo":            "PIXEL_OFFICE_DEMO=1 node server.js",
+    "build":           "npm run build:sprites && npm run build:props && npm run build:monitors && npm run build:furniture && npm run build:icons",
+    "build:sprites":   "node scripts/build-sprites.js",
+    "build:props":     "node scripts/build-props.js",
+    "build:monitors":  "node scripts/build-monitors.js",
+    "build:furniture": "node scripts/build-furniture.js",
+    "build:icons":     "node scripts/generate-icons.js",
+    "build:profiles":  "node scripts/export-profile-pics.js"
+  },
+  "main": "server.js",
+  "files": [
+    "server.js",
+    "lib/",
+    "scripts/",
+    "public/"
+  ]
+}

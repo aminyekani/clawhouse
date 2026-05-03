@@ -1,0 +1,42 @@
+{
+  "_comment": "Copy this file to products.json and edit to match your setup. Each product appears in the launch rail above the office grid.",
+  "products": [
+    {
+      "id": "my-dashboard",
+      "agentId": "markethunting",
+      "name": "My Dashboard",
+      "description": "A live dashboard built by the analyst agent.",
+      "status": "live",
+      "port": 8787,
+      "path": "/dashboard/",
+      "tags": ["dashboard"],
+      "start": {
+        "cwd": "/path/to/project",
+        "cmd": "node",
+        "args": ["scripts/start.mjs"]
+      }
+    },
+    {
+      "id": "docs-site",
+      "agentId": "sage",
+      "name": "Documentation",
+      "description": "Agent-maintained docs site.",
+      "status": "live",
+      "port": 4200,
+      "tags": ["docs"],
+      "start": {
+        "cwd": "/path/to/docs",
+        "cmd": "npx",
+        "args": ["serve", "--port", "4200"]
+      }
+    },
+    {
+      "id": "planned-feature",
+      "agentId": "main",
+      "name": "Coming Soon",
+      "description": "A product that is still being built.",
+      "status": "planned",
+      "tags": ["planned"]
+    }
+  ]
+}
