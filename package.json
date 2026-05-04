@@ -1,7 +1,7 @@
 {
-  "name": "pixel-office",
+  "name": "clawhouse",
   "version": "0.1.0",
-  "description": "Pixel-art fleet status board for OpenClaw agents",
+  "description": "Pixel-art fleet status board for OpenClaw agents — part of the Clawvision family",
   "license": "MIT",
   "engines": { "node": ">=22" },
   "scripts": {
@@ -17,8 +17,12 @@
     "build:profiles":  "node scripts/export-profile-pics.js"
   },
   "main": "server.js",
+  "bin": {
+    "clawhouse": "bin/clawhouse.js"
+  },
   "files": [
     "server.js",
+    "bin/",
     "lib/",
     "scripts/",
     "public/"

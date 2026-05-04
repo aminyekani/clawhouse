@@ -44,6 +44,8 @@
       box-shadow:4px 4px 0 var(--line); font:inherit; font-size:12px;
     }
     .button.secondary { background:#39416f; }
+    #chime-btn.chime-off { opacity:.5; }
+    #chime-btn.chime-on  { opacity:1; box-shadow:4px 4px 0 #59f7c7; }
     .wrap { display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:18px; padding:18px; }
     .office {
       /* Each room is locked to exactly the scene's width + room padding +
@@ -1012,6 +1014,34 @@
       z-index: 2;
     }
     .sprite.facing-left { --facing: -2.5; }
+    /* Sub-agent minions — mini versions of the parent sprite that appear when
+       the agent has spawned background workers (sessionKey contains :subagent:).
+       Capped at 3 visible. Positioned along the floor to the right of the desk
+       so they cluster around the parent without obscuring the work seat. */
+    .minion {
+      position:absolute; bottom:6px; width:32px; height:48px;
+      background-image:url('sprites.png'); background-repeat:no-repeat;
+      background-position: 0 calc(var(--sprite-row, 0) * -48px);
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      transform: scale(1.4, 1.4); transform-origin: 50% 100%;
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,.35)) brightness(0.92);
+      animation: minion-bob 2.4s ease-in-out infinite, sprite-active 0.72s steps(4) infinite;
+      opacity: 0.92;
+      z-index: 2;
+    }
+    .minion.m0 { left: 240px; animation-delay: 0s, 0s; }
+    .minion.m1 { left: 278px; animation-delay: .4s, .12s; }
+    .minion.m2 { left: 316px; animation-delay: .8s, .24s; }
+    @keyframes minion-bob {
+      0%,100% { transform: scale(1.4, 1.4) translateY(0); }
+      50%     { transform: scale(1.4, 1.4) translateY(-2px); }
+    }
+    .minion-count {
+      position:absolute; top:-6px; right:-8px;
+      background:#1a1a2a; color:#7df9d0; font-size:9px; font-weight:700;
+      border:2px solid #0a0a1a; padding:1px 4px; border-radius:8px;
+      pointer-events:none;
+    }
     .sprite.active  { animation: sprite-active 0.72s steps(4) infinite, sprite-breathe 3.2s ease-in-out infinite; }
     .sprite.idle    { animation: sprite-idle 2.4s steps(4) infinite,   sprite-breathe 3.6s ease-in-out infinite; }
     .sprite.sip     { animation: sprite-sip 2.0s steps(4) infinite,    sprite-breathe 3.6s ease-in-out infinite; }
@@ -1073,6 +1103,35 @@
     .room.away   .statsboard { box-shadow: inset 0 0 0 2px #4a3018, inset 0 2px 0 0 #707090; }
     .speech::after { content:""; position:absolute; left:10px; bottom:-10px; border-width:10px 10px 0 0; border-style:solid; border-color:var(--line) transparent transparent transparent; }
     .speech::before { content:""; position:absolute; left:13px; bottom:-5px; border-width:7px 7px 0 0; border-style:solid; border-color:#fff5d9 transparent transparent transparent; z-index:1; }
+    /* Cost-aware room glow: overrides --glow when session burn rate is high.
+       .burn-hot     = session consumed ≥40% of the agent's 24h budget (amber)
+       .burn-critical = session consumed ≥75% of the 24h budget (red pulse) */
+    .room.burn-hot      { --glow: #ff9830 !important; }
+    .room.burn-critical { --glow: #ff3d30 !important; animation: burn-pulse 1.6s ease-in-out infinite; }
+    @keyframes burn-pulse {
+      0%,100% { box-shadow: none; }
+      50%     { box-shadow: 0 0 0 3px #ff3d3044 inset; }
+    }
+
+    /* Contextual speech-bubble variants — fire when the server emits a
+       non-null agent.bubble. Each variant repaints the fill + border and the
+       tail triangles so the colour story stays coherent end-to-end.
+         alert  red    — agent crashed or has a 2× failure streak
+         warn   amber  — recent failures or context near full
+         busy   blue   — agent is actively running */
+    .speech.alert { background:#ffd9d4; color:#3b1410; border-color:#7a1a12; animation: bubble-pulse 1.4s ease-in-out infinite; }
+    .speech.alert::after  { border-top-color:#7a1a12; }
+    .speech.alert::before { border-top-color:#ffd9d4; }
+    .speech.warn  { background:#fff0c8; color:#3a2a08; border-color:#7a560a; }
+    .speech.warn::after   { border-top-color:#7a560a; }
+    .speech.warn::before  { border-top-color:#fff0c8; }
+    .speech.busy  { background:#d6efff; color:#0a2a4a; border-color:#1a4a7a; }
+    .speech.busy::after   { border-top-color:#1a4a7a; }
+    .speech.busy::before  { border-top-color:#d6efff; }
+    @keyframes bubble-pulse {
+      0%,100% { transform:translateY(0); }
+      50%     { transform:translateY(-2px); }
+    }
     .room-footer { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; font-size:11px; color:var(--muted); }
     .prop {
       position:absolute; width:32px; height:32px;
@@ -1471,6 +1530,8 @@
     <div id="fleet-cost" class="fleet-cost" hidden></div>
     <div class="actions">
       <a id="openclaw-link" class="button secondary" target="_blank" rel="noreferrer">Open Control UI</a>
+      <button id="chime-btn" class="secondary" title="Toggle chime when an agent finishes a task">🔕 Chime</button>
+      <button id="chime-btn" class="secondary chime-off" title="Enable sound chime when an agent finishes a task">🔔</button>
       <button id="refresh-btn" title="Re-fetch data (long-press for full reload)">Refresh</button>
       <button id="reload-btn" class="secondary" title="Reload page (clears cached HTML/JS)">Reload</button>
     </div>
@@ -1747,6 +1808,17 @@
       for (let i = 0; i < agent.id.length; i++) h = (h * 31 + agent.id.charCodeAt(i)) | 0;
       const idx = (((slot + Math.abs(h)) % lines.length) + lines.length) % lines.length;
       return lines[idx];
+    }
+
+    // Resolves what the speech bubble should say + how it should look. When
+    // the server has surfaced a contextual signal (crashed, failing, working,
+    // context-hot) we honour it and apply a severity-coloured variant. Otherwise
+    // we fall back to the in-character personality quip rotation. Returns
+    // { kind, text } where kind is one of: alert | warn | busy | quip.
+    function pickBubble(agent) {
+      const b = agent.bubble;
+      if (b && b.text) return { kind: b.kind || 'busy', text: b.text };
+      return { kind: 'quip', text: pickQuip(agent) };
     }
 
     // Speech bubble is single-line, max-width 200px (~32 chars at 10px font).
@@ -2364,9 +2436,15 @@
       panelMeta.appendChild(link);
     }
 
+    function burnClass(agent) {
+      if (agent.burnSignal === 'critical') return ' burn-critical';
+      if (agent.burnSignal === 'hot')      return ' burn-hot';
+      return '';
+    }
+
     function createRoom(agent) {
       const theme = getTheme(agent);
-      const room = el('button', `room ${agent.status}`);
+      const room = el('button', `room ${agent.status}${burnClass(agent)}`);
       room.type = 'button';
       room.dataset.agent = agent.id;
       applyTheme(room, theme);
@@ -2416,10 +2494,27 @@
       sprite.style.setProperty('--sprite-row', cfg.spriteRow);
       sprite.dataset.agent = agent.id;
       scene.appendChild(sprite);
+      // Render up to 3 sub-agent minions next to the parent. If there are
+      // more than 3, the third one carries a +N badge so the count stays
+      // legible without packing the floor with sprites.
+      const subN = Number(agent.subagentCount) || 0;
+      if (subN > 0) {
+        const visible = Math.min(subN, 3);
+        for (let i = 0; i < visible; i++) {
+          const m = el('div', `minion m${i}`);
+          m.style.setProperty('--sprite-row', cfg.spriteRow);
+          if (i === visible - 1 && subN > 3) {
+            m.appendChild(el('span', 'minion-count', `+${subN - 3}`));
+          }
+          scene.appendChild(m);
+        }
+      }
       scene.appendChild(el('div', `status-dot ${agent.status}`));
       if (agent.status === 'away') scene.appendChild(el('div', 'zzz', 'z z z'));
       scene.appendChild(buildStatsBoard(agent));
-      scene.appendChild(el('div', 'speech', clampSpeech(pickQuip(agent))));
+      const bubble = pickBubble(agent);
+      const bubbleClass = bubble.kind === 'quip' ? 'speech' : `speech ${bubble.kind}`;
+      scene.appendChild(el('div', bubbleClass, clampSpeech(bubble.text)));
       room.appendChild(scene);
 
       const footer = el('div', 'room-footer');
@@ -2811,8 +2906,10 @@
     function updateRoomInPlace(agent) {
       const room = officeEl.querySelector(`.room[data-agent="${agent.id}"]`);
       if (!room) return;
-      room.classList.remove('active', 'idle', 'away');
+      room.classList.remove('active', 'idle', 'away', 'burn-hot', 'burn-critical');
       room.classList.add(agent.status);
+      const bc = burnClass(agent).trim();
+      if (bc) room.classList.add(bc);
       const badge = room.querySelector('.badge');
       if (badge) {
         badge.className = `badge ${agent.status}`;
@@ -2947,11 +3044,64 @@
       if (target) renderPanel(target);
     }
 
+    // ---- Completion chime ----
+    // Opt-in sound that fires when an agent transitions from sessionStatus
+    // 'running' → 'done' between polls. Uses WebAudio (no asset files).
+    // A short two-tone "ding": fundamental at 880 Hz followed by 1320 Hz.
+    // The user enables it by clicking 🔔; state persists in localStorage.
+    const chimeBtn = document.getElementById('chime-btn');
+    let chimeEnabled = localStorage.getItem('pixel-office-chime') === '1';
+    let prevSessionStatus = {};  // agentId → last known sessionStatus
+
+    function applyChimeClass() {
+      chimeBtn.classList.toggle('chime-on',  chimeEnabled);
+      chimeBtn.classList.toggle('chime-off', !chimeEnabled);
+      chimeBtn.title = chimeEnabled
+        ? 'Sound chime ON — click to disable'
+        : 'Sound chime OFF — click to enable';
+    }
+    applyChimeClass();
+
+    chimeBtn.addEventListener('click', () => {
+      chimeEnabled = !chimeEnabled;
+      localStorage.setItem('pixel-office-chime', chimeEnabled ? '1' : '0');
+      applyChimeClass();
+    });
+
+    function playChime() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.55);
+        gain.connect(ctx.destination);
+        [[880, 0], [1320, 0.12]].forEach(([freq, delay]) => {
+          const osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          osc.connect(gain);
+          osc.start(ctx.currentTime + delay);
+          osc.stop(ctx.currentTime + delay + 0.4);
+        });
+        setTimeout(() => ctx.close(), 700);
+      } catch {}
+    }
+
+    function detectChimes(state) {
+      if (!chimeEnabled) { prevSessionStatus = {}; return; }
+      for (const a of state.agents) {
+        const prev = prevSessionStatus[a.id];
+        if (prev === 'running' && a.sessionStatus === 'done') playChime();
+        prevSessionStatus[a.id] = a.sessionStatus;
+      }
+    }
+
     async function load() {
       refreshBtn.disabled = true;
       try {
         const res = await fetch('/api/pixel-office/state', { cache:'no-store' });
         const state = await res.json();
+        detectChimes(state);
         render(state);
       } catch {
         officeEl.innerHTML = '<div class="empty">Failed to load office state.</div>';

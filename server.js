@@ -39,21 +39,23 @@ const DEMO_MODE = process.env.PIXEL_OFFICE_DEMO === '1' || !fs.existsSync(STATE_
 
 // In demo mode the server has no `~/.openclaw/` state to read, so we ship
 // a fixture cast that matches the agent ids the index.html AGENT_CONFIG knows
-// how to render. Visitors get a populated office instead of an empty grid.
+// how to render. Each demo entry's `demo` block synthesises plausible session
+// state — varied ages, token counts, and signals — so the bubble/glow features
+// are visible out of the box without anyone needing to install OpenClaw.
 const DEMO_FLEET = {
   agents: {
     list: [
-      { id: 'main',          identity: { name: 'Commander',  emoji: '🦅' } },
-      { id: 'markethunting', identity: { name: 'Analyst',    emoji: '📈' } },
-      { id: 'sage',          identity: { name: 'Mentor',     emoji: '🍵' } },
-      { id: 'senku',         identity: { name: 'Scientist',  emoji: '🧪' } },
-      { id: 'shikamaru',     identity: { name: 'Strategist', emoji: '♟️' } },
-      { id: 'tyrion',        identity: { name: 'Financier',  emoji: '🍷' } },
-      { id: 'harvey',        identity: { name: 'Counsel',    emoji: '⚖️' } },
-      { id: 'l',             identity: { name: 'Auditor',    emoji: '🍬' } },
-      { id: 'd',             identity: { name: 'Producer',   emoji: '🎤' } },
-      { id: 'ephraim',       identity: { name: 'Coach',      emoji: '🏋️' } },
-      { id: 'house',         identity: { name: 'Doctor',     emoji: '🩺' } },
+      { id: 'main',          identity: { name: 'Commander',  emoji: '🦅' }, demo: { ageS: 12,    totalTokens: 92_400,  contextWindow: 200_000, sessionStatus: 'running', sessionCost: 0.05, dayCost: 0.12, subagents: 2 } },
+      { id: 'markethunting', identity: { name: 'Analyst',    emoji: '📈' }, demo: { ageS: 320,   totalTokens: 188_000, contextWindow: 200_000, sessionStatus: 'done', abortedLastRun: true, sessionCost: 1.20, dayCost: 1.30 } },
+      { id: 'sage',          identity: { name: 'Mentor',     emoji: '🍵' }, demo: { ageS: 1100,  totalTokens: 41_200,  contextWindow: 200_000, sessionStatus: 'done', sessionCost: 0.03, dayCost: 0.18 } },
+      { id: 'senku',         identity: { name: 'Scientist',  emoji: '🧪' }, demo: { ageS: 4,     totalTokens: 156_800, contextWindow: 200_000, sessionStatus: 'running', sessionCost: 0.30, dayCost: 0.32, subagents: 3 } },
+      { id: 'shikamaru',     identity: { name: 'Strategist', emoji: '♟️' }, demo: { ageS: 240,   totalTokens: 64_300,  contextWindow: 200_000, sessionStatus: 'running', sessionCost: 0.08, dayCost: 0.25 } },
+      { id: 'tyrion',        identity: { name: 'Financier',  emoji: '🍷' }, demo: { ageS: 3600,  totalTokens: 12_900,  contextWindow: 200_000, sessionStatus: 'done', consecutiveFailures: 2, sessionCost: 0.01, dayCost: 0.15 } },
+      { id: 'harvey',        identity: { name: 'Counsel',    emoji: '⚖️' }, demo: { ageS: 18,    totalTokens: 88_400,  contextWindow: 200_000, sessionStatus: 'running', sessionCost: 0.40, dayCost: 0.50, subagents: 1 } },
+      { id: 'l',             identity: { name: 'Auditor',    emoji: '🍬' }, demo: { ageS: 600,   totalTokens: 33_500,  contextWindow: 200_000, sessionStatus: 'done', sessionCost: 0.02, dayCost: 0.09 } },
+      { id: 'd',             identity: { name: 'Producer',   emoji: '🎤' }, demo: { ageS: 7400,  totalTokens: 22_100,  contextWindow: 200_000, sessionStatus: 'done', sessionCost: 0.01, dayCost: 0.07 } },
+      { id: 'ephraim',       identity: { name: 'Coach',      emoji: '🏋️' }, demo: { ageS: 90,    totalTokens: 71_200,  contextWindow: 200_000, sessionStatus: 'running', sessionCost: 0.12, dayCost: 0.28 } },
+      { id: 'house',         identity: { name: 'Doctor',     emoji: '🩺' }, demo: { ageS: 32_400, totalTokens: 8_800,  contextWindow: 200_000, sessionStatus: 'done', sessionCost: 0.00, dayCost: 0.04 } },
     ],
   },
 };
@@ -388,6 +390,86 @@ function findProductById(productId) {
   return list.find(p => p?.id === productId) || null;
 }
 
+// Builds a synthetic session map for a demo agent so loadAgents can run its
+// usual code path without needing real `~/.openclaw/agents/<id>/sessions/`
+// files on disk. Returns an object keyed by a fake session id, with the
+// session-status fields that summarizeSessions/tokenSummaryFromSession read.
+function synthDemoSessions(demo) {
+  if (!demo) return {};
+  const updatedAt = Date.now() - (Number(demo.ageS) || 0) * 1000;
+  const sessions = {
+    [`agent:demo:telegram:direct:demo`]: {
+      sessionId: 'demo-session',
+      updatedAt,
+      lastChannel: 'telegram',
+      chatType: 'direct',
+      status: demo.sessionStatus || 'done',
+      abortedLastRun: !!demo.abortedLastRun,
+      totalTokens: demo.totalTokens || 0,
+      contextTokens: demo.contextWindow || 0,
+      cacheRead: Math.round((demo.totalTokens || 0) * 0.62),
+      cacheWrite: Math.round((demo.totalTokens || 0) * 0.04),
+      inputTokens: Math.round((demo.totalTokens || 0) * 0.93),
+      outputTokens: Math.round((demo.totalTokens || 0) * 0.07),
+      model: demo.model || 'claude-cli/claude-sonnet-4-6',
+    },
+  };
+  for (let i = 0; i < (demo.subagents || 0); i++) {
+    sessions[`agent:demo:subagent:demo-${i}`] = {
+      sessionId: `demo-subagent-${i}`,
+      updatedAt: updatedAt - i * 30_000,
+      status: 'running',
+      lastChannel: 'subagent',
+    };
+  }
+  return sessions;
+}
+
+// Builds synthetic usage windows for a demo agent so the burn-signal and
+// cost-panel features are visible out-of-the-box. Mirrors the shape that
+// lib/usage.js#fleetUsage returns in perAgent[id].
+function synthDemoUsage(demo) {
+  if (!demo) return null;
+  const mkWindow = (billed, count) => ({ billed, count, byProvider: { 'claude-cli': billed } });
+  return {
+    session: mkWindow(demo.sessionCost || 0, 1),
+    day:     mkWindow(demo.dayCost    || 0, Math.max(1, Math.round((demo.dayCost || 0) / Math.max(demo.sessionCost || 0.01, 0.001)))),
+    month:   mkWindow((demo.dayCost || 0) * 20, 0),
+    year:    mkWindow((demo.dayCost || 0) * 200, 0),
+  };
+}
+
+// Compares the current session's cost to the 24h total to detect a "hot"
+// burn rate. Returns 'critical' when the session consumed ≥75% of the day's
+// budget, 'hot' when ≥40%, otherwise null. Visible as an orange/red glow
+// on the agent's room — the only cost feature visible at a glance without
+// opening the stats panel.
+function deriveBurnSignal(usageData) {
+  if (!usageData) return null;
+  const sessionBilled = usageData.session?.billed || 0;
+  const dayBilled     = usageData.day?.billed     || 0;
+  if (!dayBilled || !sessionBilled) return null;
+  const ratio = sessionBilled / dayBilled;
+  if (ratio >= 0.75) return 'critical';
+  if (ratio >= 0.40) return 'hot';
+  return null;
+}
+
+// Picks the right speech bubble for an agent given its signals + session
+// state. Severity ladder: alert (something is broken and needs a human) >
+// warn (recent issue) > busy (currently working) > null (fall back to the
+// in-character personality quip rendered client-side). Text is short — the
+// bubble has a 32-char visible budget before clamping.
+function deriveBubble(signals, signalDetail, statusKey, sessionStatus) {
+  if (signals.aborted)              return { kind: 'alert', text: 'crashed — needs a restart' };
+  if (signals.streak)               return { kind: 'alert', text: `failing ${signalDetail.streak || 0}× in a row` };
+  if (signals.recentFail)           return { kind: 'warn',  text: `${signalDetail.recentFail || 0} task issue${signalDetail.recentFail === 1 ? '' : 's'} recently` };
+  if (signals.ctxHot)               return { kind: 'warn',  text: `context ${signalDetail.ctxPct}% — compact soon` };
+  if (statusKey === 'active' && sessionStatus === 'running') return { kind: 'busy', text: 'working…' };
+  if (statusKey === 'idle'   && sessionStatus === 'running') return { kind: 'busy', text: 'thinking…' };
+  return null;
+}
+
 function loadAgents(cfg) {
   const agents = [];
   const cronByAgent = cronJobsByAgent();
@@ -403,7 +485,9 @@ function loadAgents(cfg) {
     const vibe = shortenVibe(extractField(identityMd, 'Vibe') || '');
 
     const sessionsPath = path.join(STATE_DIR, 'agents', id, 'sessions', 'sessions.json');
-    const sessions = readJson(sessionsPath, {}) || {};
+    const sessions = agent.demo
+      ? synthDemoSessions(agent.demo)
+      : (readJson(sessionsPath, {}) || {});
     const sumS = summarizeSessions(sessions);
     const updatedAt = sumS.latest?.updatedAt || 0;
     const status = deriveStatus(updatedAt);
@@ -426,6 +510,8 @@ function loadAgents(cfg) {
       tracked: 0, active: 0, issues: 0, succeeded: 0,
       recentIssues: 0, consecutiveFailures: 0,
     };
+    if (agent.demo?.consecutiveFailures) tasksAgg.consecutiveFailures = agent.demo.consecutiveFailures;
+    if (agent.demo?.recentIssues)        tasksAgg.recentIssues        = agent.demo.recentIssues;
     const fallbackList = (agent.model?.fallbacks || []).map(modelShortName).filter(Boolean);
     const signals = {
       aborted:    !!sumS.latestMeta?.abortedLastRun,
@@ -440,6 +526,8 @@ function loadAgents(cfg) {
       ctxPct: tok.contextPct || 0,
       modelPrimary, modelDisplay,
     };
+    const sessionStatus = sumS.latestMeta?.status || null;
+    const bubble = deriveBubble(signals, signalDetail, status.key, sessionStatus);
 
     agents.push({
       id,
@@ -461,6 +549,9 @@ function loadAgents(cfg) {
       tasks: tasksAgg,
       signals,
       signalDetail,
+      sessionStatus,
+      bubble,
+      _demo: agent.demo || null,
       subagentCount: sumS.subagentCount,
       sessionKey: sumS.latest?.sessionKey || null,
       sessionId: sumS.latest?.sessionId || null,
@@ -751,7 +842,14 @@ const server = http.createServer(async (req, res) => {
     usage.refresh(agentIds).catch(() => {});
     const priceCfg = usage.loadPrices(PRICES_PATH);
     const usageData = usage.fleetUsage(agentIds, priceCfg);
-    for (const a of agents) a.usage = usageData.perAgent[a.id] || null;
+    for (const a of agents) {
+      // In demo mode each agent has a `demo` block; inject synthetic usage so
+      // the cost panel and burn-signal glow both render without real data.
+      a.usage = DEMO_MODE && a._demo
+        ? synthDemoUsage(a._demo)
+        : (usageData.perAgent[a.id] || null);
+      a.burnSignal = deriveBurnSignal(a.usage);
+    }
     // Probe each product's port so the UI can downgrade "live" → "offline"
     // when the process isn't actually serving. Cached for 30s so the 5s state
     // poll doesn't open a new socket every tick.

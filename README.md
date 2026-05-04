@@ -1,42 +1,65 @@
-# Pixel Office
+# Clawhouse
 
-A pixel-art status board for your [OpenClaw](https://openclaw.dev) agent fleet. Each agent gets their own room, sprite, and desk — the office updates live as your agents work.
+**Live cost + model control for your [OpenClaw](https://openclaw.dev) fleet — in a pixel-art office your agents actually live in.**
 
-## Features
+> Part of **Clawvision** — the visualization family for OpenClaw. Clawhouse is the office; sibling apps will follow.
 
-- **One room per agent** — unique pixel-art sprite, desk style, wall colour, window scene, and ambient particles
-- **Live status** — active / idle / away derived from session activity, polls every 5 seconds
-- **Stats panel** — click any room to inspect token usage, cost, model, recent sessions, cron jobs, and queued tasks
-- **Model switcher** — swap an agent's primary model in-UI without touching config files
-- **Products rail** — optional launcher strip for agent-built apps and dashboards (`products.json`)
-- **Demo mode** — works out of the box with no OpenClaw install; ships a full demo cast
-- **Zero npm dependencies** — plain Node.js HTTP server; built-in SQLite for task stats (Node ≥ 22)
+Other pixel-office projects show your agents walking around. This one is the only one that also tracks **what each session costs**, **which model is burning your budget**, and **lets you swap models without editing JSON**. The pixels are the hook; the cost panel is the reason to keep it open.
+
+> _Demo GIF goes here — record with `npm run demo` and any screen recorder._
+
+---
+
+## Why this one
+
+| | Clawhouse | [pixel-agents](https://github.com/pablodelucca/pixel-agents) | [Star-Office-UI](https://github.com/ringhyacinth/Star-Office-UI) | [agent-office](https://github.com/harishkotra/agent-office) |
+|---|---|---|---|---|
+| OpenClaw native (sessions, cron, sub-agents) | ✅ | ❌ Claude Code only | ✅ | ❌ Ollama |
+| Live USD cost per agent / per window | ✅ | ❌ | ❌ | ❌ |
+| Cost-aware room glow (red when burning hot) | ✅ | ❌ | ❌ | ❌ |
+| Model switcher in-UI | ✅ | ❌ | ❌ | ❌ |
+| Sub-agent visualisation | ✅ | ✅ | ❌ | ✅ |
+| Speech bubbles for "needs attention" | ✅ | ✅ | ❌ | ❌ |
+| Task-completion sound chime | ✅ | ✅ | ❌ | ❌ |
+| Zero npm dependencies | ✅ | ❌ build chain | ❌ Python+pip | ❌ TS monorepo |
+| One-command demo (no install) | ✅ `npm run demo` | ❌ | ❌ | ❌ |
+
+## Features at a glance
+
+- **Live cost panel** — per-agent USD spend rolled up by current session / 24h / 30d / 365d, with provider breakdown (Anthropic / OpenAI). Subscription-aware: prorates a flat monthly fee instead of pretending sub usage is per-token billed.
+- **Cost-aware room glow** — agent's room flashes amber when this session is burning ≥40% of its 24h budget, red-pulsing when ≥75%. The "is this expensive?" gut check, visible at a glance.
+- **Speech bubbles** — agents call out when they crash, fail consecutively, run hot on context, or are actively thinking. Severity-coloured (red / amber / blue) so a glance tells you which room to click.
+- **Sub-agent minions** — small sprites cluster next to the parent when an agent has spawned background workers. `+N` badge appears past 3.
+- **Sound chime** — opt-in (🔔 button in the topbar) WebAudio ding when an agent transitions from `running` to `done`. State persists in `localStorage`.
+- **Model switcher** — drop-down in the side panel calls `openclaw config set` so you can demote Opus → Sonnet → Haiku without touching `~/.openclaw/openclaw.json`.
+- **Products rail** — optional launcher strip above the office grid for apps and dashboards your agents build (`products.json`).
+- **Stats panel** — token usage, context %, cache hit rate, model in use, recent sessions, scheduled cron jobs, queued tasks — all the data that's already in `~/.openclaw/` rendered without the JSON.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/aminyekani/Pixel-Office.git
-cd Pixel-Office
+# Run instantly with no install (demo mode)
+npx clawhouse --demo
 
-# If you have OpenClaw running on this machine:
-node server.js
-
-# No OpenClaw? Demo mode shows the full cast:
-npm run demo
+# Or clone for local dev:
+git clone https://github.com/aminyekani/clawhouse.git
+cd clawhouse
+npm run demo            # synthetic full-cast demo, no OpenClaw needed
+node server.js          # live mode if OpenClaw is running on this machine
 ```
 
-Open **http://localhost:18890**.
+Open **http://localhost:18890**. Demo mode is auto-enabled when `~/.openclaw` doesn't exist, or force it with `PIXEL_OFFICE_DEMO=1`.
 
 ## Requirements
 
 | | |
 |---|---|
 | Node.js ≥ 22 | Uses built-in `node:sqlite` |
-| OpenClaw | Optional — required only for live fleet data |
+| OpenClaw | Optional — only needed for live fleet data |
 
 ## Configuration
 
-All configuration via environment variables:
+All configuration via environment variables — no config file:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -69,13 +92,13 @@ npm run build:profiles  # export 768×768 profile pics (Telegram-ready)
 ## Running as a service (systemd)
 
 ```ini
-# ~/.config/systemd/user/pixel-office.service
+# ~/.config/systemd/user/clawhouse.service
 [Unit]
-Description=Pixel Office fleet board
+Description=Clawhouse fleet board
 After=network.target
 
 [Service]
-WorkingDirectory=/path/to/Pixel-Office
+WorkingDirectory=/path/to/clawhouse
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 Environment=PIXEL_OFFICE_PORT=18890
@@ -86,7 +109,7 @@ WantedBy=default.target
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now pixel-office
+systemctl --user enable --now clawhouse
 ```
 
 ## Optional: products.json
@@ -121,6 +144,27 @@ Drop a `products.json` next to `server.js` to add a launch strip above the offic
 | < 1 minute | 🟢 active |
 | 1–10 minutes | 🟡 idle |
 | ≥ 10 minutes | ⚪ away |
+
+## Burn-rate rules
+
+The room glow compares the current session's billed cost to the trailing 24h:
+
+| `session.billed / day.billed` | Visual |
+|---|---|
+| < 40% | normal room glow |
+| 40 – 75% | 🟠 amber static glow ("hot") |
+| ≥ 75% | 🔴 red pulse glow ("critical") |
+
+## Speech-bubble rules
+
+| Trigger | Variant |
+|---|---|
+| Last session ended mid-run (`abortedLastRun`) | 🔴 alert (pulse) |
+| Same task failed ≥ 2× in a row | 🔴 alert (pulse) |
+| Task issue in last 6h | 🟠 warn |
+| Context window ≥ 95% full | 🟠 warn |
+| Session running, agent active | 🔵 busy |
+| Otherwise | personality quip (rotates each minute) |
 
 ## License
 
