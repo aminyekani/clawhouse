@@ -960,7 +960,7 @@
     .monitor {
       position:absolute; left:108px; bottom:48px; width:96px; height:96px;
       background-image: url('monitors.png');
-      background-size: 96px 1152px;        /* sheet 32x384 displayed at 3x (12 rows: 9 agents + ephraim + house + markethunting2 secondary) */
+      background-size: 96px auto;          /* width-locked at 3x source (32→96); height self-adjusts so adding rows to monitors.png never desyncs the row offset math */
       background-position: 0 calc(var(--sprite-row, 0) * -96px);
       background-repeat: no-repeat;
       image-rendering: pixelated; image-rendering: crisp-edges;

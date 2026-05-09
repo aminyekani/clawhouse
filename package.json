@@ -1,6 +1,6 @@
 {
   "name": "clawhouse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pixel-art fleet status board for OpenClaw agents — part of the Clawvision family",
   "license": "MIT",
   "engines": { "node": ">=22" },

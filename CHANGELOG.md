@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-05-09
+
+### Fixed
+- Monitor sprite sheet height was hardcoded in CSS (`background-size: 96px 1152px`),
+  so adding any row to `monitors.png` silently misaligned every agent's
+  monitor and clipped the last row off-screen entirely. Replaced with
+  `background-size: 96px auto` so the height self-adjusts to whatever
+  `scripts/build-monitors.js` produces. Matches how `.sprite` and `.prop`
+  already worked — no constant left to maintain.
+
 ## [0.1.0] — 2026-05-03
 
 ### Added
@@ -38,5 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Requires Node ≥ 22.
 - MIT licensed.
 
-[Unreleased]: https://github.com/aminyekani/clawhouse/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/aminyekani/clawhouse/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/aminyekani/clawhouse/releases/tag/v0.1.1
 [0.1.0]: https://github.com/aminyekani/clawhouse/releases/tag/v0.1.0
